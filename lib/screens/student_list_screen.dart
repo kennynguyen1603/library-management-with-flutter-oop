@@ -3,10 +3,26 @@ import 'package:provider/provider.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
 import '../services/library_database.dart';
 import '../models/student.dart';
+import '../models/borrow_record.dart';
 import 'package:uuid/uuid.dart';
+import 'student_detail_screen.dart';
 
-class StudentListScreen extends StatelessWidget {
+class StudentListScreen extends StatefulWidget {
   const StudentListScreen({super.key});
+
+  @override
+  State<StudentListScreen> createState() => _StudentListScreenState();
+}
+
+class _StudentListScreenState extends State<StudentListScreen> {
+  final _searchController = TextEditingController();
+  String _searchQuery = '';
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -15,54 +31,133 @@ class StudentListScreen extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Students'),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(80),
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: TextField(
+              controller: _searchController,
+              decoration: InputDecoration(
+                hintText: 'Tìm kiếm sinh viên...',
+                prefixIcon: const Icon(Icons.search),
+                suffixIcon: _searchQuery.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.clear),
+                        onPressed: () {
+                          setState(() {
+                            _searchController.clear();
+                            _searchQuery = '';
+                          });
+                        },
+                      )
+                    : null,
+                filled: true,
+                fillColor: Colors.white,
+              ),
+              onChanged: (value) {
+                setState(() {
+                  _searchQuery = value;
+                });
+              },
+            ),
+          ),
+        ),
       ),
-      body: StreamBuilder<List<Student>>(
-        stream: database.studentsStream,
-        builder: (context, snapshot) {
-          if (!snapshot.hasData) {
+      body: ValueListenableBuilder<bool>(
+        valueListenable: database.isLoadingNotifier,
+        builder: (context, isLoading, child) {
+          if (isLoading) {
             return const Center(child: CircularProgressIndicator());
           }
 
-          final students = snapshot.data!;
-          if (students.isEmpty) {
-            return const Center(
-              child:
-                  Text('No students registered. Add students to get started!'),
-            );
-          }
+          return ValueListenableBuilder<Map<String, Student>>(
+            valueListenable: database.students,
+            builder: (context, students, child) {
+              final studentsList = students.values.toList();
+              final filteredStudents = _searchQuery.isEmpty
+                  ? studentsList
+                  : studentsList
+                      .where((student) =>
+                          student.name
+                              .toLowerCase()
+                              .contains(_searchQuery.toLowerCase()) ||
+                          student.studentId
+                              .toLowerCase()
+                              .contains(_searchQuery.toLowerCase()) ||
+                          student.className
+                              .toLowerCase()
+                              .contains(_searchQuery.toLowerCase()))
+                      .toList();
 
-          return ListView.builder(
-            itemCount: students.length,
-            itemBuilder: (context, index) {
-              final student = students[index];
-              return Slidable(
-                endActionPane: ActionPane(
-                  motion: const ScrollMotion(),
-                  children: [
-                    SlidableAction(
-                      onPressed: (_) =>
-                          _deleteStudent(context, database, student.id),
-                      backgroundColor: Colors.red,
-                      foregroundColor: Colors.white,
-                      icon: Icons.delete,
-                      label: 'Delete',
-                    ),
-                  ],
-                ),
-                child: ListTile(
-                  leading: CircleAvatar(
-                    backgroundColor: Colors.blue,
-                    child: Text(
-                      student.name.isNotEmpty
-                          ? student.name[0].toUpperCase()
-                          : '?',
-                      style: const TextStyle(color: Colors.white),
-                    ),
+              if (filteredStudents.isEmpty) {
+                return Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        _searchQuery.isEmpty ? Icons.people : Icons.search_off,
+                        size: 64,
+                        color: Colors.grey[400],
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        _searchQuery.isEmpty
+                            ? 'Chưa có sinh viên nào được đăng ký'
+                            : 'Không tìm thấy sinh viên phù hợp với "$_searchQuery"',
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                              color: Colors.grey[600],
+                            ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
                   ),
-                  title: Text(student.name),
-                  subtitle: Text('Class: ${student.className}'),
-                  trailing: _buildBorrowedBooksChip(student),
-                ),
+                );
+              }
+
+              return ListView.builder(
+                itemCount: filteredStudents.length,
+                itemBuilder: (context, index) {
+                  final student = filteredStudents[index];
+                  return Slidable(
+                    endActionPane: ActionPane(
+                      motion: const ScrollMotion(),
+                      children: [
+                        SlidableAction(
+                          onPressed: (_) =>
+                              _deleteStudent(context, database, student.id),
+                          backgroundColor: Colors.red,
+                          foregroundColor: Colors.white,
+                          icon: Icons.delete,
+                          label: 'Delete',
+                        ),
+                      ],
+                    ),
+                    child: ListTile(
+                      leading: CircleAvatar(
+                        backgroundColor: Colors.blue,
+                        child: Text(
+                          student.name.isNotEmpty
+                              ? student.name[0].toUpperCase()
+                              : '?',
+                          style: const TextStyle(color: Colors.white),
+                        ),
+                      ),
+                      title: Text(student.name),
+                      subtitle: Text(
+                          'Mã SV: ${student.studentId} - Lớp: ${student.className}'),
+                      trailing: _buildBorrowedBooksChip(student),
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) =>
+                                StudentDetailScreen(student: student),
+                          ),
+                        );
+                      },
+                    ),
+                  );
+                },
               );
             },
           );
@@ -77,22 +172,35 @@ class StudentListScreen extends StatelessWidget {
   }
 
   Widget _buildBorrowedBooksChip(Student student) {
-    final borrowedCount = student.borrowedBooks.length;
-    final color = borrowedCount >= 3 ? Colors.red : Colors.green;
+    return Consumer<LibraryDatabase>(
+      builder: (context, database, _) {
+        return ValueListenableBuilder<Map<String, BorrowRecord>>(
+          valueListenable: database.borrowRecords,
+          builder: (context, borrowRecords, _) {
+            final borrowedCount = borrowRecords.values
+                .where((record) =>
+                    record.student.id == student.id && !record.isReturned)
+                .length;
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Text(
-        '$borrowedCount books',
-        style: TextStyle(
-          color: color,
-          fontWeight: FontWeight.bold,
-        ),
-      ),
+            final color = borrowedCount >= 3 ? Colors.red : Colors.green;
+
+            return Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                '$borrowedCount/3 sách',
+                style: TextStyle(
+                  color: color,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            );
+          },
+        );
+      },
     );
   }
 
