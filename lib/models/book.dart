@@ -37,6 +37,7 @@ class Book implements Searchable {
   String get author => _author;
   String get publisher => _publisher;
   int get publishYear => _publishYear;
+
   BookStatus get status => _status;
   String? get currentBorrowerId => _currentBorrowerId;
 
