@@ -93,63 +93,69 @@ class _BorrowBookScreenState extends State<BorrowBookScreen> {
           ),
         ),
       ),
-      body: StreamBuilder<List<Book>>(
-        stream: database.booksStream,
-        builder: (context, snapshot) {
-          if (!snapshot.hasData) {
+      body: ValueListenableBuilder<bool>(
+        valueListenable: database.isLoadingNotifier,
+        builder: (context, isLoading, child) {
+          if (isLoading) {
             return const Center(child: CircularProgressIndicator());
           }
 
-          final books = snapshot.data!;
-          final availableBooks = books
-              .where((book) =>
-                  book.status == BookStatus.available &&
-                  (_searchQuery.isEmpty ||
-                      book.title
-                          .toLowerCase()
-                          .contains(_searchQuery.toLowerCase()) ||
-                      book.author
-                          .toLowerCase()
-                          .contains(_searchQuery.toLowerCase())))
-              .toList();
+          return ValueListenableBuilder<Map<String, Book>>(
+            valueListenable: database.books,
+            builder: (context, books, _) {
+              final availableBooks = books.values
+                  .where((book) =>
+                      book.status == BookStatus.available &&
+                      (_searchQuery.isEmpty ||
+                          book.title
+                              .toLowerCase()
+                              .contains(_searchQuery.toLowerCase()) ||
+                          book.author
+                              .toLowerCase()
+                              .contains(_searchQuery.toLowerCase())))
+                  .toList();
 
-          if (availableBooks.isEmpty) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    _searchQuery.isEmpty ? Icons.menu_book : Icons.search_off,
-                    size: 64,
-                    color: Colors.grey[400],
+              if (availableBooks.isEmpty) {
+                return Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        _searchQuery.isEmpty
+                            ? Icons.menu_book
+                            : Icons.search_off,
+                        size: 64,
+                        color: Colors.grey[400],
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        _searchQuery.isEmpty
+                            ? 'Không có sách nào có sẵn để mượn'
+                            : 'Không tìm thấy sách phù hợp với "$_searchQuery"',
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                              color: Colors.grey[600],
+                            ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 16),
-                  Text(
-                    _searchQuery.isEmpty
-                        ? 'Không có sách nào có sẵn để mượn'
-                        : 'Không tìm thấy sách phù hợp với "$_searchQuery"',
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          color: Colors.grey[600],
-                        ),
-                    textAlign: TextAlign.center,
-                  ),
-                ],
-              ),
-            );
-          }
+                );
+              }
 
-          return GridView.builder(
-            padding: const EdgeInsets.all(16),
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              childAspectRatio: 0.75,
-              crossAxisSpacing: 16,
-              mainAxisSpacing: 16,
-            ),
-            itemCount: availableBooks.length,
-            itemBuilder: (context, index) {
-              final book = availableBooks[index];
-              return _buildBookCard(context, book, database);
+              return GridView.builder(
+                padding: const EdgeInsets.all(16),
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 2,
+                  childAspectRatio: 0.75,
+                  crossAxisSpacing: 16,
+                  mainAxisSpacing: 16,
+                ),
+                itemCount: availableBooks.length,
+                itemBuilder: (context, index) {
+                  final book = availableBooks[index];
+                  return _buildBookCard(context, book, database);
+                },
+              );
             },
           );
         },
@@ -168,7 +174,7 @@ class _BorrowBookScreenState extends State<BorrowBookScreen> {
           children: [
             Container(
               height: 120,
-              color: Colors.blue.withOpacity(0.1),
+              color: Colors.blue.withValues(alpha: 0.1),
               child: Center(
                 child: Icon(
                   Icons.book,
@@ -209,7 +215,7 @@ class _BorrowBookScreenState extends State<BorrowBookScreen> {
                         vertical: 4,
                       ),
                       decoration: BoxDecoration(
-                        color: Colors.green.withOpacity(0.1),
+                        color: Colors.green.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Row(
@@ -304,12 +310,17 @@ class _BorrowBookScreenState extends State<BorrowBookScreen> {
               try {
                 await database.borrowBook(widget.student.id, book.id);
                 if (mounted) {
-                  Navigator.pop(context); // Close dialog
-                  Navigator.pop(context); // Return to previous screen
+                  Navigator.pop(context);
+                  Navigator.pop(context);
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
                       content: Text('Đã mượn sách "${book.title}" thành công'),
                       backgroundColor: Colors.green,
+                      action: SnackBarAction(
+                        label: 'OK',
+                        textColor: Colors.white,
+                        onPressed: () {},
+                      ),
                     ),
                   );
                 }
@@ -320,6 +331,11 @@ class _BorrowBookScreenState extends State<BorrowBookScreen> {
                     SnackBar(
                       content: Text('Lỗi: ${e.toString()}'),
                       backgroundColor: Colors.red,
+                      action: SnackBarAction(
+                        label: 'OK',
+                        textColor: Colors.white,
+                        onPressed: () {},
+                      ),
                     ),
                   );
                 }
