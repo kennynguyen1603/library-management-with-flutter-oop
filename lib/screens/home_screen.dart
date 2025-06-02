@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/library_database.dart';
-import '../widgets/loading_state_widget.dart';
 import 'book_list_screen.dart';
 import 'student_list_screen.dart';
 import 'history_screen.dart';
@@ -11,15 +10,30 @@ class HomeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final database = Provider.of<LibraryDatabase>(context, listen: false);
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Library Management System'),
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Consumer<LibraryDatabase>(
-          builder: (context, database, child) {
-            return GridView.count(
+      body: ValueListenableBuilder<bool>(
+        valueListenable: database.isLoadingNotifier,
+        builder: (context, isLoading, child) {
+          if (isLoading) {
+            return const Center(
+              child: SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                ),
+              ),
+            );
+          }
+
+          return Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: GridView.count(
               crossAxisCount: 2,
               crossAxisSpacing: 16.0,
               mainAxisSpacing: 16.0,
@@ -32,7 +46,8 @@ class HomeScreen extends StatelessWidget {
                   () => Navigator.push(
                     context,
                     MaterialPageRoute(
-                        builder: (context) => const BookListScreen()),
+                      builder: (context) => const BookListScreen(),
+                    ),
                   ),
                 ),
                 _buildMenuCard(
@@ -43,7 +58,8 @@ class HomeScreen extends StatelessWidget {
                   () => Navigator.push(
                     context,
                     MaterialPageRoute(
-                        builder: (context) => const StudentListScreen()),
+                      builder: (context) => const StudentListScreen(),
+                    ),
                   ),
                 ),
                 _buildMenuCard(
@@ -54,14 +70,13 @@ class HomeScreen extends StatelessWidget {
                   () => Navigator.push(
                     context,
                     MaterialPageRoute(
-                        builder: (context) => const HistoryScreen()),
+                      builder: (context) => const HistoryScreen(),
+                    ),
                   ),
                 ),
-                LoadingStateWidget<int>(
-                  stream: database.totalBooksStream,
-                  emptyMessage: 'No books available',
-                  emptyIcon: Icons.library_books,
-                  onData: (totalBooks) {
+                ValueListenableBuilder<int>(
+                  valueListenable: database.totalBooksNotifier,
+                  builder: (context, totalBooks, child) {
                     return _buildStatsCard(
                       context,
                       'Total Books',
@@ -72,9 +87,9 @@ class HomeScreen extends StatelessWidget {
                   },
                 ),
               ],
-            );
-          },
-        ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -86,24 +101,28 @@ class HomeScreen extends StatelessWidget {
     Color color,
     VoidCallback onTap,
   ) {
-    return Card(
-      elevation: 4.0,
-      child: InkWell(
-        onTap: onTap,
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              icon,
-              size: 48.0,
-              color: color,
-            ),
-            const SizedBox(height: 16.0),
-            Text(
-              title,
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-          ],
+    return Hero(
+      tag: title,
+      child: Card(
+        elevation: 4.0,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(12),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                icon,
+                size: 48.0,
+                color: color,
+              ),
+              const SizedBox(height: 16.0),
+              Text(
+                title,
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+            ],
+          ),
         ),
       ),
     );
