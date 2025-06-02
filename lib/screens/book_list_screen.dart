@@ -11,21 +11,53 @@ class BookListScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final database = Provider.of<LibraryDatabase>(context);
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Chào e bé'),
+        title: const Text('Books'),
       ),
-      body: Consumer<LibraryDatabase>(
-        builder: (context, database, child) {
-          return LoadingStateWidget<List<Book>>(
-            stream: database.booksStream,
-            emptyMessage: 'No books available. Add some books to get started!',
-            emptyIcon: Icons.book,
-            onData: (books) {
+      body: ValueListenableBuilder<bool>(
+        valueListenable: database.isLoadingNotifier,
+        builder: (context, isLoading, child) {
+          if (isLoading) {
+            return const Center(
+              child: CircularProgressIndicator(),
+            );
+          }
+
+          return ValueListenableBuilder<Map<String, Book>>(
+            valueListenable: database.books,
+            builder: (context, books, child) {
+              final booksList = books.values.toList();
+
+              if (booksList.isEmpty) {
+                return Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.book,
+                        size: 64,
+                        color: Colors.grey[400],
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'No books available. Add some books to get started!',
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                              color: Colors.grey[600],
+                            ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
+                  ),
+                );
+              }
+
               return ListView.builder(
-                itemCount: books.length,
+                itemCount: booksList.length,
                 itemBuilder: (context, index) {
-                  final book = books[index];
+                  final book = booksList[index];
                   return Slidable(
                     endActionPane: ActionPane(
                       motion: const ScrollMotion(),
@@ -58,8 +90,7 @@ class BookListScreen extends StatelessWidget {
       ),
       floatingActionButton: FloatingActionButton(
         heroTag: 'add_book_fab',
-        onPressed: () => _showAddBookDialog(
-            context, Provider.of<LibraryDatabase>(context, listen: false)),
+        onPressed: () => _showAddBookDialog(context, database),
         child: const Icon(Icons.add),
       ),
     );
@@ -82,7 +113,7 @@ class BookListScreen extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
+        color: color.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: color),
       ),
