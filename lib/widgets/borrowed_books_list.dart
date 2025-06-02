@@ -1,73 +1,96 @@
 import 'package:flutter/material.dart';
 import '../models/book.dart';
-import 'loading_state_widget.dart';
 
-class BorrowedBooksList extends LoadingStateWidget<List<Book>> {
+class BorrowedBooksList extends StatelessWidget {
+  final Stream<List<Book>> stream;
   final VoidCallback onAddPressed;
   final Function(Book) onReturnPressed;
 
-  BorrowedBooksList({
+  const BorrowedBooksList({
     super.key,
-    required super.stream,
+    required this.stream,
     required this.onAddPressed,
     required this.onReturnPressed,
-  }) : super(
-          emptyMessage:
-              'Bạn chưa mượn quyển sách nào\nNhấn \'Thêm\' để bắt đầu hành trình đọc sách!',
-          emptyIcon: Icons.menu_book,
-          onData: (data) => data.isEmpty
-              ? const SizedBox()
-              : ListView.builder(
-                  itemCount: data.length,
-                  itemBuilder: (context, index) {
-                    final book = data[index];
-                    return Card(
-                      margin: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 8),
-                      child: ListTile(
-                        leading: const CircleAvatar(
-                          backgroundColor: Colors.blue,
-                          child: Icon(Icons.book, color: Colors.white),
-                        ),
-                        title: Text(book.title),
-                        subtitle: Text(book.author),
-                        trailing: IconButton(
-                          icon: const Icon(Icons.check_circle_outline),
-                          onPressed: () => onReturnPressed(book),
-                          color: Colors.green,
-                        ),
-                      ),
-                    );
-                  },
-                ),
-        );
+  });
 
   @override
   Widget build(BuildContext context) {
     return Column(
       children: [
-        Expanded(
-          child: super.build(context),
-        ),
         Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: onAddPressed,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.blue,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Sách đang mượn',
+                style: Theme.of(context).textTheme.titleLarge,
               ),
-              child: const Text(
-                'Thêm',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              FilledButton.icon(
+                onPressed: onAddPressed,
+                icon: const Icon(Icons.add),
+                label: const Text('Mượn sách'),
               ),
-            ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: StreamBuilder<List<Book>>(
+            stream: stream,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
+
+              if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                return Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.book,
+                        size: 64,
+                        color: Colors.grey[400],
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Chưa có sách nào được mượn',
+                        style:
+                            Theme.of(context).textTheme.titleMedium?.copyWith(
+                                  color: Colors.grey[600],
+                                ),
+                      ),
+                    ],
+                  ),
+                );
+              }
+
+              final books = snapshot.data!;
+              return ListView.builder(
+                itemCount: books.length,
+                itemBuilder: (context, index) {
+                  final book = books[index];
+                  return Card(
+                    margin: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
+                    child: ListTile(
+                      leading: const CircleAvatar(
+                        child: Icon(Icons.book),
+                      ),
+                      title: Text(book.title),
+                      subtitle: Text(book.author),
+                      trailing: TextButton.icon(
+                        onPressed: () => onReturnPressed(book),
+                        icon: const Icon(Icons.check),
+                        label: const Text('Trả sách'),
+                      ),
+                    ),
+                  );
+                },
+              );
+            },
           ),
         ),
       ],

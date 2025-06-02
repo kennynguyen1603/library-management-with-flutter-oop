@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import '../models/student.dart';
 import '../models/book.dart';
+import '../models/borrow_record.dart';
 import '../services/library_database.dart';
-import '../widgets/borrowed_books_list.dart';
 import 'package:provider/provider.dart';
 import '../screens/borrow_book_screen.dart';
 
@@ -21,12 +21,6 @@ class StudentDetailScreen extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(
         title: Text(student.name),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.edit),
-            onPressed: () => _showEditDialog(context, database),
-          ),
-        ],
       ),
       body: Column(
         children: [
@@ -83,10 +77,89 @@ class StudentDetailScreen extends StatelessWidget {
             ),
           ),
           Expanded(
-            child: BorrowedBooksList(
-              stream: database.getBorrowedBooksForStudent(student.id),
-              onAddPressed: () => _showBorrowBookDialog(context, database),
-              onReturnPressed: (book) => _returnBook(context, database, book),
+            child: ValueListenableBuilder<Map<String, BorrowRecord>>(
+              valueListenable: database.borrowRecords,
+              builder: (context, borrowRecords, _) {
+                final studentBorrowedBooks = borrowRecords.values
+                    .where((record) =>
+                        record.student.id == student.id &&
+                        record.isReturned == false)
+                    .map((record) => record.book)
+                    .toList();
+
+                return Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Sách đang mượn',
+                            style: Theme.of(context).textTheme.titleLarge,
+                          ),
+                          FilledButton.icon(
+                            onPressed: () =>
+                                _showBorrowBookDialog(context, database),
+                            icon: const Icon(Icons.add),
+                            label: const Text('Mượn sách'),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Expanded(
+                      child: studentBorrowedBooks.isEmpty
+                          ? Center(
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    Icons.book,
+                                    size: 64,
+                                    color: Colors.grey[400],
+                                  ),
+                                  const SizedBox(height: 16),
+                                  Text(
+                                    'Chưa có sách nào được mượn',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .titleMedium
+                                        ?.copyWith(
+                                          color: Colors.grey[600],
+                                        ),
+                                  ),
+                                ],
+                              ),
+                            )
+                          : ListView.builder(
+                              itemCount: studentBorrowedBooks.length,
+                              itemBuilder: (context, index) {
+                                final book = studentBorrowedBooks[index];
+                                return Card(
+                                  margin: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                    vertical: 8,
+                                  ),
+                                  child: ListTile(
+                                    leading: const CircleAvatar(
+                                      child: Icon(Icons.book),
+                                    ),
+                                    title: Text(book.title),
+                                    subtitle: Text(book.author),
+                                    trailing: TextButton.icon(
+                                      onPressed: () =>
+                                          _returnBook(context, database, book),
+                                      icon: const Icon(Icons.check),
+                                      label: const Text('Trả sách'),
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                    ),
+                  ],
+                );
+              },
             ),
           ),
         ],
@@ -178,9 +251,29 @@ class StudentDetailScreen extends StatelessWidget {
             child: const Text('Hủy'),
           ),
           TextButton(
-            onPressed: () {
-              database.returnBook(book.id);
-              Navigator.pop(context);
+            onPressed: () async {
+              try {
+                await database.returnBook(book.id);
+                if (context.mounted) {
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Đã trả sách "${book.title}" thành công'),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                }
+              } catch (e) {
+                if (context.mounted) {
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Lỗi: ${e.toString()}'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              }
             },
             child: const Text('Trả sách'),
           ),
