@@ -90,7 +90,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Lịch sử mượn sách'),
+        title: const Text('Borrow History'),
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(80),
           child: Padding(
@@ -125,183 +125,190 @@ class _HistoryScreenState extends State<HistoryScreen> {
           ),
         ),
       ),
-      body: StreamBuilder<List<BorrowRecord>>(
-        stream: database.borrowRecordsStream,
-        builder: (context, recordsSnapshot) {
-          if (!recordsSnapshot.hasData) {
+      body: ValueListenableBuilder<bool>(
+        valueListenable: database.isLoadingNotifier,
+        builder: (context, isLoading, child) {
+          if (isLoading) {
             return const Center(child: CircularProgressIndicator());
           }
 
-          return StreamBuilder<List<Student>>(
-            stream: database.studentsStream,
-            builder: (context, studentsSnapshot) {
-              if (!studentsSnapshot.hasData) {
-                return const Center(child: CircularProgressIndicator());
-              }
+          return ValueListenableBuilder<Map<String, BorrowRecord>>(
+            valueListenable: database.borrowRecords,
+            builder: (context, borrowRecords, _) {
+              return ValueListenableBuilder<Map<String, Student>>(
+                valueListenable: database.students,
+                builder: (context, students, _) {
+                  final recordsList = borrowRecords.values.toList();
+                  final studentsList = students.values.toList();
 
-              final records = recordsSnapshot.data!;
-              final students = studentsSnapshot.data!;
-
-              if (records.isEmpty) {
-                return Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.history,
-                        size: 64,
-                        color: Colors.grey[400],
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        'Chưa có lịch sử mượn sách nào',
-                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                              color: Colors.grey[600],
-                            ),
-                      ),
-                    ],
-                  ),
-                );
-              }
-
-              // Filter students based on search query
-              final filteredStudents = _searchQuery.isEmpty
-                  ? students
-                  : students
-                      .where((student) => student.name
-                          .toLowerCase()
-                          .contains(_searchQuery.toLowerCase()))
-                      .toList();
-
-              // If we have a search query but no matching students
-              if (_searchQuery.isNotEmpty && filteredStudents.isEmpty) {
-                return Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.search_off,
-                        size: 64,
-                        color: Colors.grey[400],
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        'Không tìm thấy sinh viên với tên "$_searchQuery"',
-                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                              color: Colors.grey[600],
-                            ),
-                        textAlign: TextAlign.center,
-                      ),
-                    ],
-                  ),
-                );
-              }
-
-              // If we have a selected student, show their records
-              if (_selectedStudent != null) {
-                final studentRecords = records
-                    .where(
-                        (record) => record.student.id == _selectedStudent!.id)
-                    .toList();
-
-                return Column(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      color: Colors.blue.withValues(alpha: 0.1),
-                      child: Row(
+                  if (recordsList.isEmpty) {
+                    return Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          CircleAvatar(
-                            backgroundColor: Colors.blue,
-                            child: Text(
-                              _selectedStudent!.name[0].toUpperCase(),
-                              style: const TextStyle(color: Colors.white),
-                            ),
+                          Icon(
+                            Icons.history,
+                            size: 64,
+                            color: Colors.grey[400],
                           ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  _selectedStudent!.name,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 18,
-                                  ),
+                          const SizedBox(height: 16),
+                          Text(
+                            'Chưa có lịch sử mượn sách nào',
+                            style: Theme.of(context)
+                                .textTheme
+                                .titleLarge
+                                ?.copyWith(
+                                  color: Colors.grey[600],
                                 ),
-                                Text(
-                                  'Mã SV: ${_selectedStudent!.studentId} - Lớp: ${_selectedStudent!.className}',
-                                  style: TextStyle(
-                                    color: Colors.grey[600],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.close),
-                            onPressed: () {
-                              setState(() {
-                                _selectedStudent = null;
-                              });
-                            },
                           ),
                         ],
                       ),
-                    ),
-                    Expanded(
-                      child: studentRecords.isEmpty
-                          ? Center(
-                              child: Text(
-                                'Sinh viên chưa mượn sách nào',
-                                style: TextStyle(
-                                  color: Colors.grey[600],
-                                  fontSize: 16,
-                                ),
-                              ),
-                            )
-                          : ListView.builder(
-                              itemCount: studentRecords.length,
-                              itemBuilder: (context, index) {
-                                final record = studentRecords[index];
-                                return _buildRecordCard(record);
-                              },
-                            ),
-                    ),
-                  ],
-                );
-              }
-
-              // Show the list of students with borrowing history
-              return ListView.builder(
-                itemCount: filteredStudents.length,
-                itemBuilder: (context, index) {
-                  final student = filteredStudents[index];
-                  final studentRecords = records
-                      .where((record) => record.student.id == student.id)
-                      .toList();
-
-                  if (studentRecords.isEmpty) {
-                    return const SizedBox.shrink();
+                    );
                   }
 
-                  return ListTile(
-                    leading: CircleAvatar(
-                      backgroundColor: Colors.blue,
-                      child: Text(
-                        student.name[0].toUpperCase(),
-                        style: const TextStyle(color: Colors.white),
+                  // Filter students based on search query
+                  final filteredStudents = _searchQuery.isEmpty
+                      ? studentsList
+                      : studentsList
+                          .where((student) => student.name
+                              .toLowerCase()
+                              .contains(_searchQuery.toLowerCase()))
+                          .toList();
+
+                  // If we have a search query but no matching students
+                  if (_searchQuery.isNotEmpty && filteredStudents.isEmpty) {
+                    return Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.search_off,
+                            size: 64,
+                            color: Colors.grey[400],
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            'Không tìm thấy sinh viên với tên "$_searchQuery"',
+                            style: Theme.of(context)
+                                .textTheme
+                                .titleLarge
+                                ?.copyWith(
+                                  color: Colors.grey[600],
+                                ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
                       ),
-                    ),
-                    title: Text(student.name),
-                    subtitle: Text(
-                        'Mã SV: ${student.studentId} - ${studentRecords.length} lượt mượn'),
-                    trailing: const Icon(Icons.chevron_right),
-                    onTap: () {
-                      setState(() {
-                        _selectedStudent = student;
-                      });
+                    );
+                  }
+
+                  // If we have a selected student, show their records
+                  if (_selectedStudent != null) {
+                    final studentRecords = recordsList
+                        .where((record) =>
+                            record.student.id == _selectedStudent!.id)
+                        .toList();
+
+                    return Column(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          color: Colors.blue.withValues(alpha: 0.1),
+                          child: Row(
+                            children: [
+                              CircleAvatar(
+                                backgroundColor: Colors.blue,
+                                child: Text(
+                                  _selectedStudent!.name[0].toUpperCase(),
+                                  style: const TextStyle(color: Colors.white),
+                                ),
+                              ),
+                              const SizedBox(width: 16),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      _selectedStudent!.name,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 18,
+                                      ),
+                                    ),
+                                    Text(
+                                      'Mã SV: ${_selectedStudent!.studentId} - Lớp: ${_selectedStudent!.className}',
+                                      style: TextStyle(
+                                        color: Colors.grey[600],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.close),
+                                onPressed: () {
+                                  setState(() {
+                                    _selectedStudent = null;
+                                  });
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+                        Expanded(
+                          child: studentRecords.isEmpty
+                              ? Center(
+                                  child: Text(
+                                    'Sinh viên chưa mượn sách nào',
+                                    style: TextStyle(
+                                      color: Colors.grey[600],
+                                      fontSize: 16,
+                                    ),
+                                  ),
+                                )
+                              : ListView.builder(
+                                  itemCount: studentRecords.length,
+                                  itemBuilder: (context, index) {
+                                    final record = studentRecords[index];
+                                    return _buildRecordCard(record);
+                                  },
+                                ),
+                        ),
+                      ],
+                    );
+                  }
+
+                  // Show the list of students with borrowing history
+                  return ListView.builder(
+                    itemCount: filteredStudents.length,
+                    itemBuilder: (context, index) {
+                      final student = filteredStudents[index];
+                      final studentRecords = recordsList
+                          .where((record) => record.student.id == student.id)
+                          .toList();
+
+                      if (studentRecords.isEmpty) {
+                        return const SizedBox.shrink();
+                      }
+
+                      return ListTile(
+                        leading: CircleAvatar(
+                          backgroundColor: Colors.blue,
+                          child: Text(
+                            student.name[0].toUpperCase(),
+                            style: const TextStyle(color: Colors.white),
+                          ),
+                        ),
+                        title: Text(student.name),
+                        subtitle: Text(
+                            'Mã SV: ${student.studentId} - ${studentRecords.length} lượt mượn'),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () {
+                          setState(() {
+                            _selectedStudent = student;
+                          });
+                        },
+                      );
                     },
                   );
                 },
