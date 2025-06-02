@@ -5,94 +5,162 @@ class LoadingStateWidget<T> extends StatelessWidget {
   final Widget Function(T data) onData;
   final String emptyMessage;
   final IconData emptyIcon;
-  final bool Function(T? data)? isEmpty;
+  final String? loadingMessage;
+  final bool showRetryButton;
+  final VoidCallback? onRetry;
 
   const LoadingStateWidget({
     super.key,
     required this.stream,
     required this.onData,
     required this.emptyMessage,
-    this.emptyIcon = Icons.info_outline,
-    this.isEmpty,
+    required this.emptyIcon,
+    this.loadingMessage,
+    this.showRetryButton = true,
+    this.onRetry,
   });
-
-  bool _isEmpty(T? data) {
-    if (isEmpty != null) {
-      return isEmpty!(data);
-    }
-    if (data == null) return true;
-    if (data is List) return data.isEmpty;
-    if (data is Map) return data.isEmpty;
-    if (data is String) return data.isEmpty;
-    return false;
-  }
 
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<T>(
       stream: stream,
-      builder: (context, snapshot) {
+      builder: (context, AsyncSnapshot<T> snapshot) {
+        // First check if we have data, regardless of connection state
+        if (snapshot.hasData) {
+          if (snapshot.data is List && (snapshot.data as List).isEmpty) {
+            return _buildEmptyState(context);
+          }
+          return onData(snapshot.data as T);
+        }
+
+        // Then handle error state
         if (snapshot.hasError) {
-          debugPrint('Stream error: ${snapshot.error}');
-          debugPrint('Stack trace: ${snapshot.stackTrace}');
-          return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(Icons.error_outline, size: 48, color: Colors.red),
-                const SizedBox(height: 16),
-                Text(
-                  'Đã xảy ra lỗi: ${snapshot.error}',
-                  style: Theme.of(context).textTheme.titleMedium,
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 16),
-                ElevatedButton(
-                  onPressed: () {
-                    // This will trigger a rebuild of the StreamBuilder
-                    (context as Element).markNeedsBuild();
-                  },
-                  child: const Text('Thử lại'),
-                ),
-              ],
-            ),
-          );
+          return _buildErrorState(context, snapshot.error.toString());
         }
 
-        if (!snapshot.hasData) {
-          return const Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                CircularProgressIndicator(),
-                SizedBox(height: 16),
-                Text('Đang tải dữ liệu...'),
-              ],
-            ),
-          );
+        // Finally handle loading state
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return _buildLoadingState(context);
         }
 
-        if (_isEmpty(snapshot.data)) {
-          return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(emptyIcon, size: 48, color: Colors.grey),
-                const SizedBox(height: 16),
-                Text(
-                  emptyMessage,
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        color: Colors.grey[600],
-                      ),
-                  textAlign: TextAlign.center,
-                ),
-              ],
-            ),
-          );
-        }
-
-        return onData(snapshot.data as T);
+        // No data state
+        return _buildEmptyState(context);
       },
+    );
+  }
+
+  Widget _buildLoadingState(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const SizedBox(
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(
+                strokeWidth: 2.0,
+              ),
+            ),
+            if (loadingMessage != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                loadingMessage!,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Colors.grey[600],
+                    ),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildErrorState(BuildContext context, String error) {
+    return Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.error_outline,
+              size: 64,
+              color: Colors.red[400],
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Đã xảy ra lỗi',
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    color: Colors.red[600],
+                  ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              error,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Colors.grey[600],
+                  ),
+              textAlign: TextAlign.center,
+            ),
+            if (showRetryButton && onRetry != null) ...[
+              const SizedBox(height: 24),
+              ElevatedButton.icon(
+                onPressed: onRetry,
+                icon: const Icon(Icons.refresh),
+                label: const Text('Thử lại'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Theme.of(context).primaryColor,
+                  foregroundColor: Colors.white,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyState(BuildContext context) {
+    return Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              emptyIcon,
+              size: 64,
+              color: Colors.grey[400],
+            ),
+            const SizedBox(height: 16),
+            Text(
+              emptyMessage,
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    color: Colors.grey[600],
+                  ),
+              textAlign: TextAlign.center,
+            ),
+            if (showRetryButton && onRetry != null) ...[
+              const SizedBox(height: 24),
+              TextButton.icon(
+                onPressed: onRetry,
+                icon: const Icon(Icons.refresh),
+                label: const Text('Làm mới'),
+                style: TextButton.styleFrom(
+                  foregroundColor: Theme.of(context).primaryColor,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
     );
   }
 }
