@@ -136,7 +136,7 @@ class PostgresDatabase {
   // Book operations
   Future<void> addBook(Book book) async {
     await _withConnection((conn) async {
-      final query = '''
+      const query = '''
         INSERT INTO books 
           (id, isbn, title, author, publisher, publish_year, status) 
         VALUES 
@@ -172,7 +172,7 @@ class PostgresDatabase {
 
   Future<void> updateBook(Book book) async {
     await _withConnection((conn) async {
-      final query = '''
+      const query = '''
         UPDATE books 
         SET 
           isbn = \$2, 
@@ -213,7 +213,7 @@ class PostgresDatabase {
   // Student operations
   Future<void> addStudent(Student student) async {
     await _withConnection((conn) async {
-      final query = r'''
+      const query = '''
         INSERT INTO students 
           (id, student_id, name, class_name, email, phone_number) 
         VALUES 
@@ -248,7 +248,7 @@ class PostgresDatabase {
 
   Future<void> updateStudent(Student student) async {
     await _withConnection((conn) async {
-      final query = '''
+      const query = '''
         UPDATE students 
         SET 
           student_id = \$2, 
@@ -285,7 +285,7 @@ class PostgresDatabase {
   // Borrow operations
   Future<void> addBorrowRecord(BorrowRecord record) async {
     await _withConnection((conn) async {
-      final query = '''
+      const query = '''
         INSERT INTO borrow_records 
           (id, book_id, student_id, borrow_date, return_date, is_returned) 
         VALUES 
@@ -321,6 +321,33 @@ class PostgresDatabase {
         return _rowToBorrowRecord(values);
       }).toList();
     });
+  }
+
+  Future<void> updateBorrowRecord(BorrowRecord record) async {
+    try {
+      await _withConnection((conn) async {
+        const query = '''
+          UPDATE borrow_records 
+          SET 
+            return_date = \$2, 
+            is_returned = \$3 
+          WHERE id = \$1
+        ''';
+
+        await conn.execute(
+          query,
+          parameters: [
+            record.id,
+            record.returnDate,
+            record.isReturned,
+          ],
+        );
+      });
+      debugPrint('Cập nhật bản ghi mượn sách thành công: ${record.id}');
+    } catch (e) {
+      debugPrint('Lỗi khi cập nhật bản ghi mượn sách: $e');
+      rethrow;
+    }
   }
 
   // Helper methods to convert database rows to objects

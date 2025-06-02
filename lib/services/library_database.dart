@@ -5,23 +5,32 @@ import '../models/borrow_record.dart';
 import 'postgres_database.dart';
 import 'package:uuid/uuid.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 
-class LibraryDatabase {
+class LibraryDatabase extends ChangeNotifier {
   // Singleton pattern
   static final LibraryDatabase _instance = LibraryDatabase._internal();
   factory LibraryDatabase() => _instance;
 
-  // In-memory storage
-  final Map<String, Book> _books = {};
-  final Map<String, Student> _students = {};
-  final Map<String, BorrowRecord> _borrowRecords = {};
+  // In-memory storage with ValueNotifier for immediate UI updates
+  final ValueNotifier<Map<String, Book>> _books = ValueNotifier({});
+  final ValueNotifier<Map<String, Student>> _students = ValueNotifier({});
+  final ValueNotifier<Map<String, BorrowRecord>> _borrowRecords =
+      ValueNotifier({});
 
   // Stream controllers for real-time updates
-  late StreamController<List<Book>> _booksController;
-  late StreamController<List<Student>> _studentsController;
-  late StreamController<List<BorrowRecord>> _borrowRecordsController;
+  final _booksController = StreamController<List<Book>>.broadcast();
+  final _studentsController = StreamController<List<Student>>.broadcast();
+  final _borrowRecordsController =
+      StreamController<List<BorrowRecord>>.broadcast();
+
   final _postgresDb = PostgresDatabase();
   bool _isInitialized = false;
+  bool _isLoading = false;
+
+  // Value notifiers for immediate UI updates
+  final ValueNotifier<int> totalBooksNotifier = ValueNotifier(0);
+  final ValueNotifier<bool> isLoadingNotifier = ValueNotifier(false);
 
   // Getters for streams
   Stream<List<Book>> get booksStream => _booksController.stream;
@@ -32,147 +41,192 @@ class LibraryDatabase {
   // Add totalBooksStream
   Stream<int> get totalBooksStream => booksStream.map((books) => books.length);
 
-  // Private constructor
-  LibraryDatabase._internal() {
-    _initializeControllers();
-  }
+  // Getters for ValueNotifiers
+  ValueNotifier<Map<String, Book>> get books => _books;
+  ValueNotifier<Map<String, Student>> get students => _students;
+  ValueNotifier<Map<String, BorrowRecord>> get borrowRecords => _borrowRecords;
 
-  void _initializeControllers() {
-    _booksController = StreamController<List<Book>>.broadcast();
-    _studentsController = StreamController<List<Student>>.broadcast();
-    _borrowRecordsController = StreamController<List<BorrowRecord>>.broadcast();
+  // Private constructor
+  LibraryDatabase._internal();
+
+  @override
+  void dispose() {
+    _booksController.close();
+    _studentsController.close();
+    _borrowRecordsController.close();
+    totalBooksNotifier.dispose();
+    isLoadingNotifier.dispose();
+    super.dispose();
   }
 
   // Initialize database
   Future<void> initialize() async {
-    if (_isInitialized) {
-      debugPrint('Database already initialized');
+    if (_isInitialized && !_isLoading) {
+      debugPrint('Database already initialized, refreshing data...');
+      await _initializeData();
       return;
     }
+
+    if (_isLoading) {
+      debugPrint('Database initialization already in progress...');
+      return;
+    }
+
+    _isLoading = true;
+    isLoadingNotifier.value = true;
 
     try {
       debugPrint('Starting database initialization...');
       await _postgresDb.connect();
-      debugPrint('Database connection established');
+
+      // Load initial data in parallel
       await _initializeData();
       _isInitialized = true;
+
       debugPrint('Database initialized successfully');
     } catch (e, stackTrace) {
       debugPrint('Error initializing database: $e');
       debugPrint('Stack trace: $stackTrace');
-      // Initialize empty data to prevent infinite loading
-      _booksController.add([]);
-      _studentsController.add([]);
-      _borrowRecordsController.add([]);
-      rethrow;
+      _isInitialized = false;
+    } finally {
+      _isLoading = false;
+      isLoadingNotifier.value = false;
+      notifyListeners();
     }
   }
 
-  // Initialize data
+  // Initialize data with parallel loading
   Future<void> _initializeData() async {
     try {
       debugPrint('Starting to load initial data...');
-      await Future.wait([
+
+      // Load all data in parallel for faster initialization
+      final results = await Future.wait([
         _loadBooks(),
         _loadStudents(),
         _loadBorrowRecords(),
       ]);
+
+      // Update UI immediately after all data is loaded
+      _notifyAllUpdates();
+
       debugPrint('Initial data loaded successfully');
     } catch (e, stackTrace) {
       debugPrint('Error loading initial data: $e');
       debugPrint('Stack trace: $stackTrace');
-      rethrow;
+      // Keep existing data on error
+      _notifyAllUpdates();
     }
   }
 
-  // Load data from PostgreSQL
+  void _notifyAllUpdates() {
+    // Update streams and notifiers
+    _booksController.add(_books.value.values.toList());
+    _studentsController.add(_students.value.values.toList());
+    _borrowRecordsController.add(_borrowRecords.value.values.toList());
+    totalBooksNotifier.value = _books.value.length;
+    notifyListeners();
+  }
+
+  // Load data from PostgreSQL with immediate updates
   Future<void> _loadBooks() async {
     try {
-      debugPrint('Loading books from database...');
       final books = await _postgresDb.getAllBooks();
-      debugPrint('Loaded ${books.length} books from database');
-      _books.clear(); // Clear existing data before adding new
+
+      // Update ValueNotifier immediately
+      final newBooks = <String, Book>{};
       for (var book in books) {
-        _books[book.id] = book;
+        newBooks[book.id] = book;
       }
-      if (!_booksController.isClosed) {
-        _booksController.add(books);
-        debugPrint('Books loaded and added to stream');
-      }
+      _books.value = newBooks;
+
+      // Update total books count
+      totalBooksNotifier.value = books.length;
+
+      // Update stream
+      _booksController.add(books);
     } catch (e, stackTrace) {
       debugPrint('Error loading books: $e');
       debugPrint('Stack trace: $stackTrace');
-      if (!_booksController.isClosed) {
-        _booksController.add([]);
-      }
     }
   }
 
   Future<void> _loadStudents() async {
     try {
-      debugPrint('Loading students from database...');
       final students = await _postgresDb.getAllStudents();
-      debugPrint('Loaded ${students.length} students from database');
-      _students.clear(); // Clear existing data before adding new
+
+      // Update ValueNotifier immediately
+      final newStudents = <String, Student>{};
       for (var student in students) {
-        _students[student.id] = student;
+        newStudents[student.id] = student;
       }
-      if (!_studentsController.isClosed) {
-        _studentsController.add(students);
-        debugPrint('Students loaded and added to stream');
-      }
+      _students.value = newStudents;
+
+      // Update stream
+      _studentsController.add(students);
     } catch (e, stackTrace) {
       debugPrint('Error loading students: $e');
       debugPrint('Stack trace: $stackTrace');
-      if (!_studentsController.isClosed) {
-        _studentsController.add([]);
-      }
     }
   }
 
   Future<void> _loadBorrowRecords() async {
     try {
-      debugPrint('Loading borrow records from database...');
       final records = await _postgresDb.getBorrowRecords();
-      debugPrint('Loaded ${records.length} borrow records from database');
-      _borrowRecords.clear(); // Clear existing data before adding new
+
+      // Update ValueNotifier immediately
+      final newRecords = <String, BorrowRecord>{};
       for (var record in records) {
-        _borrowRecords[record.id] = record;
+        newRecords[record.id] = record;
       }
-      if (!_borrowRecordsController.isClosed) {
-        _borrowRecordsController.add(records);
-        debugPrint('Borrow records loaded and added to stream');
-      }
+      _borrowRecords.value = newRecords;
+
+      // Update stream
+      _borrowRecordsController.add(records);
     } catch (e, stackTrace) {
       debugPrint('Error loading borrow records: $e');
       debugPrint('Stack trace: $stackTrace');
-      if (!_borrowRecordsController.isClosed) {
-        _borrowRecordsController.add([]);
-      }
     }
   }
 
   // Book operations
   Future<void> addBook(Book book) async {
-    await _postgresDb.addBook(book);
-    await _loadBooks();
+    try {
+      await _postgresDb.addBook(book);
+      await _loadBooks();
+    } catch (e) {
+      debugPrint('Error adding book: $e');
+      rethrow;
+    }
   }
 
   Future<void> updateBook(Book book) async {
-    await _postgresDb.updateBook(book);
-    await _loadBooks();
+    try {
+      await _postgresDb.updateBook(book);
+      await _loadBooks();
+    } catch (e) {
+      debugPrint('Error updating book: $e');
+      rethrow;
+    }
   }
 
   Future<void> deleteBook(String id) async {
-    await _postgresDb.deleteBook(id);
-    await _loadBooks();
+    try {
+      await _postgresDb.deleteBook(id);
+      await _loadBooks();
+    } catch (e) {
+      debugPrint('Error deleting book: $e');
+      rethrow;
+    }
   }
 
-  Book? getBook(String bookId) => _books[bookId];
+  Book? getBook(String bookId) => _books.value[bookId];
 
   List<Book> searchBooks(String query) {
-    if (query.isEmpty) return _books.values.toList();
-    return _books.values.where((book) => book.matchesSearch(query)).toList();
+    if (query.isEmpty) return _books.value.values.toList();
+    return _books.value.values
+        .where((book) => book.matchesSearch(query))
+        .toList();
   }
 
   Stream<List<Book>> getAvailableBooks() {
@@ -190,96 +244,160 @@ class LibraryDatabase {
 
   // Student operations
   Future<void> addStudent(Student student) async {
-    await _postgresDb.addStudent(student);
-    await _loadStudents();
+    try {
+      await _postgresDb.addStudent(student);
+      await _loadStudents();
+    } catch (e) {
+      debugPrint('Error adding student: $e');
+      rethrow;
+    }
   }
 
   Future<void> updateStudent(Student student) async {
-    await _postgresDb.updateStudent(student);
-    await _loadStudents();
+    try {
+      await _postgresDb.updateStudent(student);
+      await _loadStudents();
+    } catch (e) {
+      debugPrint('Error updating student: $e');
+      rethrow;
+    }
   }
 
   Future<void> deleteStudent(String id) async {
-    await _postgresDb.deleteStudent(id);
-    await _loadStudents();
+    try {
+      await _postgresDb.deleteStudent(id);
+      await _loadStudents();
+    } catch (e) {
+      debugPrint('Error deleting student: $e');
+      rethrow;
+    }
   }
 
-  Student? getStudent(String studentId) => _students[studentId];
+  Student? getStudent(String studentId) => _students.value[studentId];
 
   // Borrow operations
   Future<void> borrowBook(String studentId, String bookId) async {
-    final student = _students[studentId];
-    final book = _books[bookId];
+    try {
+      final student = _students.value[studentId];
+      final book = _books.value[bookId];
 
-    if (student == null || book == null) {
-      throw Exception('Student or book not found');
+      if (student == null || book == null) {
+        throw Exception('Student hoặc sách không tồn tại');
+      }
+
+      if (book.status != BookStatus.available) {
+        throw Exception('Sách này hiện không có sẵn để mượn');
+      }
+
+      // Kiểm tra số lượng sách đang mượn
+      final currentBorrowedBooks = _borrowRecords.value.values
+          .where((record) =>
+              record.student.id == studentId && record.isReturned == false)
+          .length;
+
+      if (currentBorrowedBooks >= 3) {
+        throw Exception('Sinh viên đã mượn tối đa 3 cuốn sách');
+      }
+
+      // Tạo bản ghi mượn sách mới
+      final record = BorrowRecord(
+        id: const Uuid().v4(),
+        book: book,
+        student: student,
+        borrowDate: DateTime.now(),
+      );
+
+      // Cập nhật trạng thái sách
+      book.status = BookStatus.borrowed;
+      book.currentBorrowerId = studentId;
+
+      // Cập nhật database
+      await _postgresDb.addBorrowRecord(record);
+      await _postgresDb.updateBook(book);
+
+      // Cập nhật state
+      final newBooks = Map<String, Book>.from(_books.value);
+      newBooks[book.id] = book;
+      _books.value = newBooks;
+
+      final newRecords = Map<String, BorrowRecord>.from(_borrowRecords.value);
+      newRecords[record.id] = record;
+      _borrowRecords.value = newRecords;
+
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error borrowing book: $e');
+      rethrow;
     }
-
-    if (book.status != BookStatus.available) {
-      throw Exception('Book is not available');
-    }
-
-    final borrowedBooks = await getBorrowedBooksForStudent(studentId).first;
-    if (borrowedBooks.length >= 3) {
-      throw Exception('Student has reached maximum number of borrowed books');
-    }
-
-    final record = BorrowRecord(
-      id: const Uuid().v4(),
-      book: book,
-      student: student,
-      borrowDate: DateTime.now(),
-    );
-
-    await _postgresDb.addBorrowRecord(record);
-    book.status = BookStatus.borrowed;
-    book.currentBorrowerId = studentId;
-    await _postgresDb.updateBook(book);
-
-    await _loadBooks();
-    await _loadBorrowRecords();
   }
 
   Future<void> returnBook(String bookId) async {
-    final book = _books[bookId];
-    if (book == null) {
-      throw Exception('Book not found');
+    try {
+      // Tìm sách trong state
+      final book = _books.value[bookId];
+      if (book == null) {
+        throw Exception('Không tìm thấy sách');
+      }
+
+      // Tìm bản ghi mượn sách chưa trả
+      final record = _borrowRecords.value.values.firstWhere(
+        (record) => record.book.id == bookId && !record.isReturned,
+        orElse: () => throw Exception('Không tìm thấy bản ghi mượn sách'),
+      );
+
+      // Cập nhật trạng thái sách
+      book.status = BookStatus.available;
+      book.currentBorrowerId = null;
+
+      // Cập nhật bản ghi mượn sách
+      record.returnBook();
+
+      // Cập nhật trong database
+      await _postgresDb.updateBook(book);
+      await _postgresDb.updateBorrowRecord(record);
+
+      // Cập nhật state
+      final newBooks = Map<String, Book>.from(_books.value);
+      newBooks[book.id] = book;
+      _books.value = newBooks;
+
+      final newRecords = Map<String, BorrowRecord>.from(_borrowRecords.value);
+      newRecords[record.id] = record;
+      _borrowRecords.value = newRecords;
+
+      // Thông báo thay đổi
+      notifyListeners();
+      debugPrint('Trả sách thành công: ${book.title}');
+    } catch (e) {
+      debugPrint('Lỗi khi trả sách: $e');
+      rethrow;
     }
-
-    final records = await borrowRecordsStream.first;
-    final record = records.firstWhere(
-      (r) => r.book.id == bookId && !r.isReturned,
-      orElse: () => throw Exception('Borrow record not found'),
-    );
-
-    record.returnBook();
-    book.status = BookStatus.available;
-    book.currentBorrowerId = null;
-
-    await _postgresDb.updateBook(book);
-    await _loadBooks();
-    await _loadBorrowRecords();
   }
 
   List<BorrowRecord> getOverdueRecords() {
-    return _borrowRecords.values.where((record) => record.isOverdue).toList();
-  }
-
-  // Cleanup
-  void dispose() {
-    _booksController.close();
-    _studentsController.close();
-    _borrowRecordsController.close();
-    _isInitialized = false;
-    _initializeControllers(); // Create new controllers for next use
+    return _borrowRecords.value.values
+        .where((record) => record.isOverdue)
+        .toList();
   }
 
   // Method to refresh all data
   Future<void> refreshData() async {
-    if (!_isInitialized) {
-      await initialize();
-    } else {
-      await _initializeData();
+    try {
+      debugPrint('Refreshing data...');
+      // Load each type of data independently
+      await Future.wait([
+        _loadBooks(),
+        _loadStudents(),
+        _loadBorrowRecords(),
+      ]);
+      debugPrint('Data refreshed successfully');
+    } catch (e) {
+      debugPrint('Error refreshing data: $e');
+      // Keep existing cache on error
+      notifyListeners();
     }
   }
+
+  // Check if data is loaded
+  bool get hasData => _books.value.isNotEmpty || _students.value.isNotEmpty;
 }
