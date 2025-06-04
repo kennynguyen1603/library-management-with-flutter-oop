@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../services/library_database.dart';
 import '../models/borrow_record.dart';
 import 'package:intl/intl.dart';
+import 'dart:async';
 
 class HistoryScreen extends StatefulWidget {
   const HistoryScreen({super.key});
@@ -15,9 +16,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
   final _searchController = TextEditingController();
   final _scrollController = ScrollController();
   String _searchQuery = '';
-  List<BorrowRecord> _displayedRecords = [];
-  bool _isLoading = false;
-  static const int _pageSize = 20;
+  bool _isLoadingMore = false;
+  Timer? _scrollDebounce;
+  bool _isNearBottom = false;
 
   @override
   void initState() {
@@ -28,22 +29,51 @@ class _HistoryScreenState extends State<HistoryScreen> {
   @override
   void dispose() {
     _searchController.dispose();
+    _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
+    _scrollDebounce?.cancel();
     super.dispose();
   }
 
   void _onScroll() {
-    if (_scrollController.position.pixels >=
-        _scrollController.position.maxScrollExtent - 500) {
-      _loadMoreRecords();
+    // Kiểm tra xem đã gần cuối chưa
+    final isNearBottom = _scrollController.position.pixels >=
+        _scrollController.position.maxScrollExtent - 500;
+
+    // Chỉ xử lý khi trạng thái gần cuối thay đổi
+    if (isNearBottom != _isNearBottom) {
+      _isNearBottom = isNearBottom;
+
+      if (isNearBottom) {
+        // Hủy timer cũ nếu có
+        _scrollDebounce?.cancel();
+
+        // Đặt timer mới
+        _scrollDebounce = Timer(const Duration(milliseconds: 300), () {
+          if (mounted) {
+            _loadMoreRecords();
+          }
+        });
+      }
     }
   }
 
-  void _loadMoreRecords() {
-    if (!_isLoading && _displayedRecords.length % _pageSize == 0) {
-      setState(() {
-        _isLoading = true;
-      });
+  Future<void> _loadMoreRecords() async {
+    if (_isLoadingMore) return;
+
+    setState(() {
+      _isLoadingMore = true;
+    });
+
+    try {
+      final database = Provider.of<LibraryDatabase>(context, listen: false);
+      await database.loadMoreRecords();
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoadingMore = false;
+        });
+      }
     }
   }
 
@@ -51,123 +81,213 @@ class _HistoryScreenState extends State<HistoryScreen> {
     return DateFormat('dd/MM/yyyy HH:mm').format(date);
   }
 
-  Widget _buildInfoRow(String label, String value, {Color? textColor}) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 120,
-            child: Text(
-              label,
-              style: const TextStyle(
-                fontWeight: FontWeight.bold,
-                color: Colors.grey,
-              ),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              value,
-              style: TextStyle(
-                color: textColor,
-                fontWeight: textColor != null ? FontWeight.bold : null,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStatusChip(BorrowRecord record) {
-    final color = record.isReturned
+  Color _getStatusColor(BorrowRecord record) {
+    return record.isReturned
         ? Colors.green
         : record.isOverdue
             ? Colors.red
             : Colors.orange;
+  }
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: color),
+  String _getStatusText(BorrowRecord record) {
+    return record.isReturned
+        ? 'Đã trả'
+        : record.isOverdue
+            ? 'Quá hạn ${record.daysOverdue} ngày'
+            : 'Đang mượn';
+  }
+
+  Widget _buildRecordItem(BorrowRecord record) {
+    final statusColor = _getStatusColor(record);
+
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      elevation: 2,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: Colors.grey.shade200),
       ),
-      child: Text(
-        record.isReturned
-            ? 'Đã trả'
-            : record.isOverdue
-                ? 'Quá hạn'
-                : 'Đang mượn',
-        style: TextStyle(
-          color: color,
-          fontWeight: FontWeight.bold,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header with title and status
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Book icon
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(Icons.book, color: Colors.blue),
+                ),
+                const SizedBox(width: 12),
+
+                // Title and student info
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        record.book.title,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Sinh viên: ${record.student.name}',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.grey.shade700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                // Status chip
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: statusColor.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: statusColor),
+                  ),
+                  child: Text(
+                    _getStatusText(record),
+                    style: TextStyle(
+                      color: statusColor,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 12),
+            const Divider(),
+            const SizedBox(height: 8),
+
+            // Student details
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Mã SV: ${record.student.studentId}',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.grey.shade700,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Lớp: ${record.student.className}',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.grey.shade700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                // Dates
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(Icons.calendar_today,
+                              size: 14, color: Colors.grey.shade600),
+                          const SizedBox(width: 4),
+                          Flexible(
+                            child: Text(
+                              'Mượn: ${_formatDate(record.borrowDate)}',
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: Colors.grey.shade700,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (record.isReturned) ...[
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            Icon(Icons.calendar_today,
+                                size: 14, color: Colors.grey.shade600),
+                            const SizedBox(width: 4),
+                            Flexible(
+                              child: Text(
+                                'Trả: ${_formatDate(record.returnDate!)}',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: Colors.grey.shade700,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ],
         ),
       ),
     );
   }
 
-  Widget _buildRecordItem(BorrowRecord record) {
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: ExpansionTile(
-        leading: CircleAvatar(
-          backgroundColor: record.isReturned
-              ? Colors.green
-              : record.isOverdue
-                  ? Colors.red
-                  : Colors.orange,
-          child: Icon(
-            record.isReturned
-                ? Icons.check
-                : record.isOverdue
-                    ? Icons.warning
-                    : Icons.book,
-            color: Colors.white,
-          ),
-        ),
-        title: Text(
-          record.book.title,
-          style: const TextStyle(fontWeight: FontWeight.bold),
-        ),
-        subtitle: Text(
-          'Mượn bởi: ${record.student.name}',
-          style: TextStyle(color: Colors.grey[600]),
-        ),
-        trailing: _buildStatusChip(record),
+  Widget _buildEmptyState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _buildInfoRow('Sinh viên:', record.student.name),
-                _buildInfoRow('Mã SV:', record.student.studentId),
-                _buildInfoRow('Lớp:', record.student.className),
-                const Divider(),
-                _buildInfoRow('Sách:', record.book.title),
-                _buildInfoRow('Tác giả:', record.book.author),
-                _buildInfoRow('NXB:', record.book.publisher),
-                _buildInfoRow('ISBN:', record.book.isbn),
-                const Divider(),
-                _buildInfoRow('Ngày mượn:', _formatDate(record.borrowDate)),
-                if (record.returnDate != null)
-                  _buildInfoRow(
-                    'Ngày trả:',
-                    _formatDate(record.returnDate!),
-                    textColor: Colors.green,
-                  ),
-                if (record.isOverdue)
-                  _buildInfoRow(
-                    'Quá hạn:',
-                    '${record.daysOverdue} ngày',
-                    textColor: Colors.red,
-                  ),
-              ],
-            ),
+          Icon(
+            _searchQuery.isEmpty ? Icons.history : Icons.search_off,
+            size: 72,
+            color: Colors.grey[300],
           ),
+          const SizedBox(height: 16),
+          Text(
+            _searchQuery.isEmpty
+                ? 'Chưa có lịch sử mượn sách'
+                : 'Không tìm thấy kết quả phù hợp',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w500,
+              color: Colors.grey[600],
+            ),
+            textAlign: TextAlign.center,
+          ),
+          if (_searchQuery.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              '"$_searchQuery"',
+              style: TextStyle(
+                fontSize: 16,
+                color: Colors.grey[500],
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
         ],
       ),
     );
@@ -178,17 +298,24 @@ class _HistoryScreenState extends State<HistoryScreen> {
     final database = context.read<LibraryDatabase>();
 
     return Scaffold(
+      backgroundColor: Colors.grey.shade50,
       appBar: AppBar(
-        title: const Text('Lịch sử mượn sách'),
+        elevation: 0,
+        title: const Text(
+          'Borrow History',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        centerTitle: true,
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(80),
-          child: Padding(
-            padding: const EdgeInsets.all(16.0),
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
             child: TextField(
               controller: _searchController,
               decoration: InputDecoration(
-                hintText: 'Tìm kiếm theo tên sinh viên hoặc tên sách...',
-                prefixIcon: const Icon(Icons.search),
+                hintText: 'Tìm kiếm theo tên sinh viên hoặc sách...',
+                hintStyle: TextStyle(color: Colors.grey.shade500, fontSize: 14),
+                prefixIcon: Icon(Icons.search, color: Colors.grey.shade600),
                 suffixIcon: _searchQuery.isNotEmpty
                     ? IconButton(
                         icon: const Icon(Icons.clear),
@@ -196,22 +323,30 @@ class _HistoryScreenState extends State<HistoryScreen> {
                           setState(() {
                             _searchController.clear();
                             _searchQuery = '';
-                            _displayedRecords.clear();
                           });
                         },
                       )
                     : null,
                 filled: true,
                 fillColor: Colors.white,
+                contentPadding: const EdgeInsets.symmetric(vertical: 12),
                 border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: BorderSide.none,
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: Colors.grey.shade200),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: Colors.grey.shade200),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide:
+                      BorderSide(color: Colors.blue.shade300, width: 1.5),
                 ),
               ),
               onChanged: (value) {
                 setState(() {
                   _searchQuery = value;
-                  _displayedRecords.clear();
                 });
               },
             ),
@@ -221,41 +356,19 @@ class _HistoryScreenState extends State<HistoryScreen> {
       body: ValueListenableBuilder<bool>(
         valueListenable: database.isLoadingNotifier,
         builder: (context, isLoading, child) {
-          if (isLoading && _displayedRecords.isEmpty) {
-            return const Center(child: CircularProgressIndicator());
+          if (isLoading && database.borrowRecords.value.isEmpty) {
+            return const Center(
+              child: CircularProgressIndicator(),
+            );
           }
 
           return ValueListenableBuilder<Map<String, BorrowRecord>>(
             valueListenable: database.borrowRecords,
-            builder: (context, borrowRecordsMap, child) {
-              final allRecords = borrowRecordsMap.values.toList();
-
-              if (allRecords.isEmpty) {
-                return Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.history,
-                        size: 64,
-                        color: Colors.grey[400],
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        'Chưa có lịch sử mượn sách nào',
-                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                              color: Colors.grey[600],
-                            ),
-                      ),
-                    ],
-                  ),
-                );
-              }
-
-              // Filter records based on search query
+            builder: (context, records, _) {
+              final recordsList = records.values.toList();
               final filteredRecords = _searchQuery.isEmpty
-                  ? allRecords
-                  : allRecords
+                  ? recordsList
+                  : recordsList
                       .where((record) =>
                           record.student.name
                               .toLowerCase()
@@ -266,60 +379,71 @@ class _HistoryScreenState extends State<HistoryScreen> {
                       .toList();
 
               if (filteredRecords.isEmpty) {
-                return Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.search_off,
-                        size: 64,
-                        color: Colors.grey[400],
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        'Không tìm thấy kết quả cho "$_searchQuery"',
-                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                              color: Colors.grey[600],
-                            ),
-                        textAlign: TextAlign.center,
-                      ),
-                    ],
+                return _buildEmptyState();
+              }
+
+              return Stack(
+                children: [
+                  RefreshIndicator(
+                    onRefresh: () async {
+                      // Implement refresh logic here
+                      await Future.delayed(const Duration(seconds: 1));
+                      if (mounted) {
+                        setState(() {});
+                      }
+                    },
+                    child: ListView.builder(
+                      controller: _scrollController,
+                      padding: const EdgeInsets.only(top: 8, bottom: 16),
+                      itemCount: filteredRecords.length +
+                          (_searchQuery.isEmpty ? 1 : 0),
+                      itemBuilder: (context, index) {
+                        if (index == filteredRecords.length) {
+                          return ValueListenableBuilder<bool>(
+                            valueListenable: database.hasMoreRecordsNotifier,
+                            builder: (context, hasMore, _) {
+                              if (!hasMore) return const SizedBox.shrink();
+
+                              return Container(
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 16),
+                                alignment: Alignment.center,
+                                child: const CircularProgressIndicator(),
+                              );
+                            },
+                          );
+                        }
+
+                        final record = filteredRecords[index];
+                        return _buildRecordItem(record);
+                      },
+                    ),
                   ),
-                );
-              }
-
-              // Update displayed records
-              if (_displayedRecords.isEmpty) {
-                _displayedRecords = filteredRecords.take(_pageSize).toList();
-              } else if (_isLoading) {
-                final currentLength = _displayedRecords.length;
-                final newRecords = filteredRecords
-                    .skip(currentLength)
-                    .take(_pageSize)
-                    .toList();
-                if (newRecords.isNotEmpty) {
-                  _displayedRecords.addAll(newRecords);
-                }
-                _isLoading = false;
-              }
-
-              return ListView.builder(
-                controller: _scrollController,
-                itemCount: _displayedRecords.length + 1,
-                itemBuilder: (context, index) {
-                  if (index == _displayedRecords.length) {
-                    if (_displayedRecords.length < filteredRecords.length) {
-                      return const Center(
-                        child: Padding(
-                          padding: EdgeInsets.all(16.0),
-                          child: CircularProgressIndicator(),
+                  if (isLoading && records.isNotEmpty)
+                    Positioned(
+                      top: 16,
+                      right: 16,
+                      child: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(20),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.1),
+                              blurRadius: 8,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
                         ),
-                      );
-                    }
-                    return const SizedBox.shrink();
-                  }
-                  return _buildRecordItem(_displayedRecords[index]);
-                },
+                        child: const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      ),
+                    ),
+                ],
               );
             },
           );
