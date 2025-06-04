@@ -32,6 +32,17 @@ class LibraryDatabase extends ChangeNotifier {
   final ValueNotifier<int> totalBooksNotifier = ValueNotifier(0);
   final ValueNotifier<bool> isLoadingNotifier = ValueNotifier(false);
 
+  // Pagination state
+  final ValueNotifier<bool> hasMoreBooksNotifier = ValueNotifier(true);
+  final ValueNotifier<bool> hasMoreStudentsNotifier = ValueNotifier(true);
+  final ValueNotifier<bool> hasMoreRecordsNotifier = ValueNotifier(true);
+
+  int _currentBookPage = 1;
+  int _currentStudentPage = 1;
+  int _currentRecordPage = 1;
+
+  static const int pageSize = 20;
+
   // Getters for streams
   Stream<List<Book>> get booksStream => _booksController.stream;
   Stream<List<Student>> get studentsStream => _studentsController.stream;
@@ -56,6 +67,9 @@ class LibraryDatabase extends ChangeNotifier {
     _borrowRecordsController.close();
     totalBooksNotifier.dispose();
     isLoadingNotifier.dispose();
+    hasMoreBooksNotifier.dispose();
+    hasMoreStudentsNotifier.dispose();
+    hasMoreRecordsNotifier.dispose();
     super.dispose();
   }
 
@@ -79,7 +93,10 @@ class LibraryDatabase extends ChangeNotifier {
       debugPrint('Starting database initialization...');
       await _postgresDb.connect();
 
-      // Load initial data in parallel
+      // Reset pagination state
+      resetPagination();
+
+      // Load initial data
       await _initializeData();
       _isInitialized = true;
 
@@ -100,6 +117,10 @@ class LibraryDatabase extends ChangeNotifier {
     try {
       debugPrint('Starting to load initial data...');
 
+      // Reset pagination state
+      resetPagination();
+
+      // Load initial data
       await Future.wait([
         _loadBooks(),
         _loadStudents(),
@@ -113,8 +134,7 @@ class LibraryDatabase extends ChangeNotifier {
     } catch (e, stackTrace) {
       debugPrint('Error loading initial data: $e');
       debugPrint('Stack trace: $stackTrace');
-      // Keep existing data on error
-      _notifyAllUpdates();
+      rethrow;
     }
   }
 
@@ -127,76 +147,159 @@ class LibraryDatabase extends ChangeNotifier {
     notifyListeners();
   }
 
-  // Load data from PostgreSQL with immediate updates
+  // Load data with pagination
   Future<void> _loadBooks() async {
     try {
-      final books = await _postgresDb.getAllBooks();
+      debugPrint('Loading books page $_currentBookPage...');
+      final result = await _postgresDb.getAllBooks(
+        page: _currentBookPage,
+        limit: pageSize,
+      );
 
-      // Update ValueNotifier immediately
-      final newBooks = <String, Book>{};
-      for (var book in books) {
-        newBooks[book.id] = book;
+      final books = result['books'] as List<Book>;
+      hasMoreBooksNotifier.value = result['hasMore'] as bool;
+      totalBooksNotifier.value = result['total'] as int;
+
+      debugPrint(
+          'Loaded ${books.length} books, hasMore: ${hasMoreBooksNotifier.value}');
+
+      // Update ValueNotifier
+      if (_currentBookPage == 1) {
+        _books.value = {for (var book in books) book.id: book};
+      } else {
+        final newBooks = Map<String, Book>.from(_books.value);
+        for (var book in books) {
+          newBooks[book.id] = book;
+        }
+        _books.value = newBooks;
       }
-      _books.value = newBooks;
-
-      // Update total books count
-      totalBooksNotifier.value = books.length;
 
       // Update stream
-      _booksController.add(books);
+      _booksController.add(_books.value.values.toList());
+      notifyListeners();
     } catch (e, stackTrace) {
       debugPrint('Error loading books: $e');
       debugPrint('Stack trace: $stackTrace');
+      rethrow;
     }
   }
 
   Future<void> _loadStudents() async {
     try {
-      final students = await _postgresDb.getAllStudents();
+      debugPrint('Loading students page $_currentStudentPage...');
+      final result = await _postgresDb.getAllStudents(
+        page: _currentStudentPage,
+        limit: pageSize,
+      );
 
-      // Update ValueNotifier immediately
-      final newStudents = <String, Student>{};
-      for (var student in students) {
-        newStudents[student.id] = student;
+      final students = result['students'] as List<Student>;
+      hasMoreStudentsNotifier.value = result['hasMore'] as bool;
+
+      debugPrint(
+          'Loaded ${students.length} students, hasMore: ${hasMoreStudentsNotifier.value}');
+
+      // Update ValueNotifier
+      if (_currentStudentPage == 1) {
+        _students.value = {for (var student in students) student.id: student};
+      } else {
+        final newStudents = Map<String, Student>.from(_students.value);
+        for (var student in students) {
+          newStudents[student.id] = student;
+        }
+        _students.value = newStudents;
       }
-      _students.value = newStudents;
 
       // Update stream
-      _studentsController.add(students);
+      _studentsController.add(_students.value.values.toList());
+      notifyListeners();
     } catch (e, stackTrace) {
       debugPrint('Error loading students: $e');
       debugPrint('Stack trace: $stackTrace');
+      rethrow;
     }
   }
 
   Future<void> _loadBorrowRecords() async {
     try {
-      debugPrint('Loading borrow records...');
-      final records = await _postgresDb.getBorrowRecords();
-      debugPrint('Loaded ${records.length} borrow records from database');
+      debugPrint('Loading borrow records page $_currentRecordPage...');
+      final result = await _postgresDb.getBorrowRecords(
+        page: _currentRecordPage,
+        limit: pageSize,
+      );
 
-      // Update ValueNotifier immediately
-      final newRecords = <String, BorrowRecord>{};
-      final streamRecords = <BorrowRecord>[];
-
-      for (var record in records) {
-        // Add to both collections
-        newRecords[record.id] = record;
-        streamRecords.add(record);
-      }
-
-      // Update ValueNotifier
-      _borrowRecords.value = newRecords;
-
-      // Update stream with the list
-      _borrowRecordsController.add(streamRecords);
+      final records = result['records'] as List<BorrowRecord>;
+      hasMoreRecordsNotifier.value = result['hasMore'] as bool;
 
       debugPrint(
-          'Successfully updated borrow records: ${streamRecords.length} records');
+          'Loaded ${records.length} records, hasMore: ${hasMoreRecordsNotifier.value}');
+
+      // Update ValueNotifier
+      if (_currentRecordPage == 1) {
+        _borrowRecords.value = {for (var record in records) record.id: record};
+      } else {
+        final newRecords = Map<String, BorrowRecord>.from(_borrowRecords.value);
+        for (var record in records) {
+          newRecords[record.id] = record;
+        }
+        _borrowRecords.value = newRecords;
+      }
+
+      // Update stream
+      _borrowRecordsController.add(_borrowRecords.value.values.toList());
+      notifyListeners();
     } catch (e, stackTrace) {
       debugPrint('Error loading borrow records: $e');
       debugPrint('Stack trace: $stackTrace');
+      rethrow;
     }
+  }
+
+  // Load more data methods
+  Future<void> loadMoreBooks() async {
+    if (!hasMoreBooksNotifier.value || _isLoading) {
+      debugPrint(
+          'Cannot load more books: hasMore=${hasMoreBooksNotifier.value}, isLoading=$_isLoading');
+      return;
+    }
+
+    debugPrint('Loading more books...');
+    _currentBookPage++;
+    await _loadBooks();
+  }
+
+  Future<void> loadMoreStudents() async {
+    if (!hasMoreStudentsNotifier.value || _isLoading) {
+      debugPrint(
+          'Cannot load more students: hasMore=${hasMoreStudentsNotifier.value}, isLoading=$_isLoading');
+      return;
+    }
+
+    debugPrint('Loading more students...');
+    _currentStudentPage++;
+    await _loadStudents();
+  }
+
+  Future<void> loadMoreRecords() async {
+    if (!hasMoreRecordsNotifier.value || _isLoading) {
+      debugPrint(
+          'Cannot load more records: hasMore=${hasMoreRecordsNotifier.value}, isLoading=$_isLoading');
+      return;
+    }
+
+    debugPrint('Loading more records...');
+    _currentRecordPage++;
+    await _loadBorrowRecords();
+  }
+
+  // Reset pagination state
+  void resetPagination() {
+    debugPrint('Resetting pagination state...');
+    _currentBookPage = 1;
+    _currentStudentPage = 1;
+    _currentRecordPage = 1;
+    hasMoreBooksNotifier.value = true;
+    hasMoreStudentsNotifier.value = true;
+    hasMoreRecordsNotifier.value = true;
   }
 
   // Book operations

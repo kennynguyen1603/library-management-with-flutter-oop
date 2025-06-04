@@ -158,15 +158,50 @@ class PostgresDatabase {
     });
   }
 
-  Future<List<Book>> getAllBooks() async {
+  // Book operations with pagination
+  Future<Map<String, dynamic>> getAllBooks(
+      {int page = 1, int limit = 20}) async {
     return await _withConnection((conn) async {
-      debugPrint('Fetching all books from database...');
-      final results = await conn.execute('SELECT * FROM books');
-      debugPrint('Successfully fetched ${results.length} books');
-      return results.map((row) {
-        final List<dynamic> values = row.toList();
-        return _rowToBook(values);
-      }).toList();
+      debugPrint(
+          'Fetching books from database (page: $page, limit: $limit)...');
+
+      try {
+        // Get total count
+        final countResult = await conn.execute('SELECT COUNT(*) FROM books');
+        final totalBooks = countResult[0][0] as int;
+        debugPrint('Total books in database: $totalBooks');
+
+        // Calculate offset
+        final offset = (page - 1) * limit;
+        debugPrint('Fetching books with offset: $offset, limit: $limit');
+
+        // Get paginated results
+        final results = await conn.execute(
+          'SELECT * FROM books ORDER BY title LIMIT \$1 OFFSET \$2',
+          parameters: [limit, offset],
+        );
+
+        debugPrint('Successfully fetched ${results.length} books');
+
+        final books = results.map((row) {
+          final List<dynamic> values = row.toList();
+          return _rowToBook(values);
+        }).toList();
+
+        final hasMore = offset + books.length < totalBooks;
+        debugPrint(
+            'Has more books: $hasMore (offset: $offset, fetched: ${books.length}, total: $totalBooks)');
+
+        return {
+          'books': books,
+          'total': totalBooks,
+          'hasMore': hasMore,
+        };
+      } catch (e, stackTrace) {
+        debugPrint('Error fetching books: $e');
+        debugPrint('Stack trace: $stackTrace');
+        rethrow;
+      }
     });
   }
 
@@ -234,15 +269,50 @@ class PostgresDatabase {
     });
   }
 
-  Future<List<Student>> getAllStudents() async {
+  // Student operations with pagination
+  Future<Map<String, dynamic>> getAllStudents(
+      {int page = 1, int limit = 20}) async {
     return await _withConnection((conn) async {
-      debugPrint('Fetching all students from database...');
-      final results = await conn.execute('SELECT * FROM students');
-      debugPrint('Successfully fetched ${results.length} students');
-      return results.map((row) {
-        final List<dynamic> values = row.toList();
-        return _rowToStudent(values);
-      }).toList();
+      debugPrint(
+          'Fetching students from database (page: $page, limit: $limit)...');
+
+      try {
+        // Get total count
+        final countResult = await conn.execute('SELECT COUNT(*) FROM students');
+        final totalStudents = countResult[0][0] as int;
+        debugPrint('Total students in database: $totalStudents');
+
+        // Calculate offset
+        final offset = (page - 1) * limit;
+        debugPrint('Fetching students with offset: $offset, limit: $limit');
+
+        // Get paginated results
+        final results = await conn.execute(
+          'SELECT * FROM students ORDER BY name LIMIT \$1 OFFSET \$2',
+          parameters: [limit, offset],
+        );
+
+        debugPrint('Successfully fetched ${results.length} students');
+
+        final students = results.map((row) {
+          final List<dynamic> values = row.toList();
+          return _rowToStudent(values);
+        }).toList();
+
+        final hasMore = offset + students.length < totalStudents;
+        debugPrint(
+            'Has more students: $hasMore (offset: $offset, fetched: ${students.length}, total: $totalStudents)');
+
+        return {
+          'students': students,
+          'total': totalStudents,
+          'hasMore': hasMore,
+        };
+      } catch (e, stackTrace) {
+        debugPrint('Error fetching students: $e');
+        debugPrint('Stack trace: $stackTrace');
+        rethrow;
+      }
     });
   }
 
@@ -306,40 +376,74 @@ class PostgresDatabase {
     });
   }
 
-  Future<List<BorrowRecord>> getBorrowRecords() async {
+  // Borrow records operations with pagination
+  Future<Map<String, dynamic>> getBorrowRecords(
+      {int page = 1, int limit = 20}) async {
     return await _withConnection((conn) async {
-      debugPrint('Fetching all borrow records from database...');
-      final results = await conn.execute('''
-        SELECT 
-          br.id,
-          br.book_id,
-          br.student_id,
-          br.borrow_date,
-          br.return_date,
-          br.is_returned,
-          b.title,
-          b.author,
-          b.publisher,
-          b.isbn,
-          b.publish_year,
-          b.status,
-          b.current_borrower_id,
-          s.name,
-          s.student_id as student_number,
-          s.class_name,
-          s.email,
-          s.phone_number
-        FROM borrow_records br
-        JOIN books b ON br.book_id = b.id
-        JOIN students s ON br.student_id = s.id
-        ORDER BY br.borrow_date DESC
-      ''');
-      debugPrint('Successfully fetched ${results.length} borrow records');
+      debugPrint(
+          'Fetching borrow records from database (page: $page, limit: $limit)...');
 
-      return results.map((row) {
-        final List<dynamic> values = row.toList();
-        return _rowToBorrowRecord(values);
-      }).toList();
+      try {
+        // Get total count
+        final countResult =
+            await conn.execute('SELECT COUNT(*) FROM borrow_records');
+        final totalRecords = countResult[0][0] as int;
+        debugPrint('Total borrow records in database: $totalRecords');
+
+        // Calculate offset
+        final offset = (page - 1) * limit;
+        debugPrint(
+            'Fetching borrow records with offset: $offset, limit: $limit');
+
+        // Get paginated results
+        final results = await conn.execute('''
+          SELECT 
+            br.id,
+            br.book_id,
+            br.student_id,
+            br.borrow_date,
+            br.return_date,
+            br.is_returned,
+            b.title,
+            b.author,
+            b.publisher,
+            b.isbn,
+            b.publish_year,
+            b.status,
+            b.current_borrower_id,
+            s.name,
+            s.student_id as student_number,
+            s.class_name,
+            s.email,
+            s.phone_number
+          FROM borrow_records br
+          JOIN books b ON br.book_id = b.id
+          JOIN students s ON br.student_id = s.id
+          ORDER BY br.borrow_date DESC
+          LIMIT \$1 OFFSET \$2
+        ''', parameters: [limit, offset]);
+
+        debugPrint('Successfully fetched ${results.length} borrow records');
+
+        final records = results.map((row) {
+          final List<dynamic> values = row.toList();
+          return _rowToBorrowRecord(values);
+        }).toList();
+
+        final hasMore = offset + records.length < totalRecords;
+        debugPrint(
+            'Has more records: $hasMore (offset: $offset, fetched: ${records.length}, total: $totalRecords)');
+
+        return {
+          'records': records,
+          'total': totalRecords,
+          'hasMore': hasMore,
+        };
+      } catch (e, stackTrace) {
+        debugPrint('Error fetching borrow records: $e');
+        debugPrint('Stack trace: $stackTrace');
+        rethrow;
+      }
     });
   }
 
