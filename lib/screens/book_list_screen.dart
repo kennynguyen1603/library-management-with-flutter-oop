@@ -3,7 +3,6 @@ import 'package:provider/provider.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
 import '../services/library_database.dart';
 import '../models/book.dart';
-import '../widgets/loading_state_widget.dart';
 import 'package:uuid/uuid.dart';
 
 class BookListScreen extends StatelessWidget {

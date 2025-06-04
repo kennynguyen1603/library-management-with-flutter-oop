@@ -100,8 +100,7 @@ class LibraryDatabase extends ChangeNotifier {
     try {
       debugPrint('Starting to load initial data...');
 
-      // Load all data in parallel for faster initialization
-      final results = await Future.wait([
+      await Future.wait([
         _loadBooks(),
         _loadStudents(),
         _loadBorrowRecords(),

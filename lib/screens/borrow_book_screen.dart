@@ -281,7 +281,7 @@ class _BorrowBookScreenState extends State<BorrowBookScreen> {
       BuildContext context, Book book, LibraryDatabase database) {
     return showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Text('Xác nhận mượn sách'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -291,7 +291,7 @@ class _BorrowBookScreenState extends State<BorrowBookScreen> {
             const SizedBox(height: 16),
             Text(
               'Thông tin sách:',
-              style: Theme.of(context).textTheme.titleMedium,
+              style: Theme.of(dialogContext).textTheme.titleMedium,
             ),
             const SizedBox(height: 8),
             _buildInfoRow('Tác giả:', book.author),
@@ -302,19 +302,24 @@ class _BorrowBookScreenState extends State<BorrowBookScreen> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(dialogContext),
             child: const Text('Hủy'),
           ),
           FilledButton(
             onPressed: () async {
+              final bookTitle = book.title;
+              final scaffoldMessenger = ScaffoldMessenger.of(context);
+              final navigator = Navigator.of(context);
+
               try {
+                Navigator.pop(dialogContext);
                 await database.borrowBook(widget.student.id, book.id);
+
                 if (mounted) {
-                  Navigator.pop(context);
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
+                  navigator.pop();
+                  scaffoldMessenger.showSnackBar(
                     SnackBar(
-                      content: Text('Đã mượn sách "${book.title}" thành công'),
+                      content: Text('Đã mượn sách "$bookTitle" thành công'),
                       backgroundColor: Colors.green,
                       action: SnackBarAction(
                         label: 'OK',
@@ -326,8 +331,7 @@ class _BorrowBookScreenState extends State<BorrowBookScreen> {
                 }
               } catch (e) {
                 if (mounted) {
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
+                  scaffoldMessenger.showSnackBar(
                     SnackBar(
                       content: Text('Lỗi: ${e.toString()}'),
                       backgroundColor: Colors.red,

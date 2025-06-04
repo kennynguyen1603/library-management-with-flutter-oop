@@ -13,8 +13,8 @@ class Book implements Searchable {
   final String _author;
   final String _publisher;
   final int _publishYear;
-  BookStatus _status;
-  String? _currentBorrowerId;
+  BookStatus status;
+  String? currentBorrowerId;
 
   Book({
     required this.id,
@@ -23,14 +23,12 @@ class Book implements Searchable {
     required String author,
     required String publisher,
     required int publishYear,
-    BookStatus status = BookStatus.available,
-    String? currentBorrowerId,
+    this.status = BookStatus.available,
+    this.currentBorrowerId,
   })  : _title = title,
         _author = author,
         _publisher = publisher,
-        _publishYear = publishYear,
-        _status = status,
-        _currentBorrowerId = currentBorrowerId;
+        _publishYear = publishYear;
 
   // Getters
   String get title => _title;
@@ -38,58 +36,22 @@ class Book implements Searchable {
   String get publisher => _publisher;
   int get publishYear => _publishYear;
 
-  BookStatus get status => _status;
-  String? get currentBorrowerId => _currentBorrowerId;
-
-  // Setters with validation
-  set title(String value) {
-    if (value.isNotEmpty) {
-      // Implementation of set title
-    }
-  }
-
-  set author(String value) {
-    if (value.isNotEmpty) {
-      // Implementation of set author
-    }
-  }
-
-  set publisher(String value) {
-    if (value.isNotEmpty) {
-      // Implementation of set publisher
-    }
-  }
-
-  set publishYear(int value) {
-    if (value > 0 && value <= DateTime.now().year) {
-      // Implementation of set publishYear
-    }
-  }
-
-  set status(BookStatus value) {
-    _status = value;
-  }
-
-  set currentBorrowerId(String? value) {
-    _currentBorrowerId = value;
-  }
-
   // Methods
   void borrowBook(String studentId) {
-    if (_status == BookStatus.available) {
-      _status = BookStatus.borrowed;
-      _currentBorrowerId = studentId;
+    if (status == BookStatus.available) {
+      status = BookStatus.borrowed;
+      currentBorrowerId = studentId;
     }
   }
 
   void returnBook() {
-    _status = BookStatus.available;
-    _currentBorrowerId = null;
+    status = BookStatus.available;
+    currentBorrowerId = null;
   }
 
   void markForMaintenance() {
-    _status = BookStatus.maintenance;
-    _currentBorrowerId = null;
+    status = BookStatus.maintenance;
+    currentBorrowerId = null;
   }
 
   // Implementation of Searchable interface
@@ -114,8 +76,8 @@ class Book implements Searchable {
       'author': _author,
       'publisher': _publisher,
       'publishYear': _publishYear,
-      'status': _status.toString(),
-      'currentBorrowerId': _currentBorrowerId,
+      'status': status.toString(),
+      'currentBorrowerId': currentBorrowerId,
     };
   }
 
