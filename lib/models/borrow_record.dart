@@ -18,6 +18,23 @@ class BorrowRecord {
     this.isReturned = false,
   });
 
+  factory BorrowRecord.fromDatabaseRow({
+    required Map<String, dynamic> recordRow,
+    required Book book,
+    required Student student,
+  }) {
+    return BorrowRecord(
+      id: recordRow['id'],
+      book: book,
+      student: student,
+      borrowDate: DateTime.parse(recordRow['borrow_date']),
+      returnDate: recordRow['return_date'] != null
+          ? DateTime.parse(recordRow['return_date'])
+          : null,
+      isReturned: recordRow['is_returned'] ?? false,
+    );
+  }
+
   void returnBook() {
     if (!isReturned) {
       isReturned = true;
@@ -42,14 +59,14 @@ class BorrowRecord {
 
   bool get isOverdue => daysOverdue > 0;
 
-  Map<String, dynamic> toJson() {
+  Map<String, dynamic> toDatabaseRow() {
     return {
       'id': id,
-      'bookId': book.id,
-      'studentId': student.id,
-      'borrowDate': borrowDate.toIso8601String(),
-      'returnDate': returnDate?.toIso8601String(),
-      'isReturned': isReturned,
+      'book_id': book.id,
+      'student_id': student.id,
+      'borrow_date': borrowDate.toIso8601String(),
+      'return_date': returnDate?.toIso8601String(),
+      'is_returned': isReturned,
     };
   }
 }

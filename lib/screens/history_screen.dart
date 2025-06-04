@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/library_database.dart';
 import '../models/borrow_record.dart';
-import '../models/student.dart';
 import 'package:intl/intl.dart';
 
 class HistoryScreen extends StatefulWidget {
@@ -14,13 +13,38 @@ class HistoryScreen extends StatefulWidget {
 
 class _HistoryScreenState extends State<HistoryScreen> {
   final _searchController = TextEditingController();
+  final _scrollController = ScrollController();
   String _searchQuery = '';
-  Student? _selectedStudent;
+  List<BorrowRecord> _displayedRecords = [];
+  bool _isLoading = false;
+  static const int _pageSize = 20;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_onScroll);
+  }
 
   @override
   void dispose() {
     _searchController.dispose();
+    _scrollController.dispose();
     super.dispose();
+  }
+
+  void _onScroll() {
+    if (_scrollController.position.pixels >=
+        _scrollController.position.maxScrollExtent - 500) {
+      _loadMoreRecords();
+    }
+  }
+
+  void _loadMoreRecords() {
+    if (!_isLoading && _displayedRecords.length % _pageSize == 0) {
+      setState(() {
+        _isLoading = true;
+      });
+    }
   }
 
   String _formatDate(DateTime date) {
@@ -67,8 +91,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.1),
+        color: color.withOpacity(0.1),
         borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: color),
       ),
       child: Text(
         record.isReturned
@@ -84,243 +109,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final database = Provider.of<LibraryDatabase>(context);
-
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Borrow History'),
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(80),
-          child: Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: TextField(
-              controller: _searchController,
-              decoration: InputDecoration(
-                hintText: 'Tìm kiếm theo tên sinh viên...',
-                prefixIcon: const Icon(Icons.search),
-                suffixIcon: _searchQuery.isNotEmpty
-                    ? IconButton(
-                        icon: const Icon(Icons.clear),
-                        onPressed: () {
-                          setState(() {
-                            _searchController.clear();
-                            _searchQuery = '';
-                            _selectedStudent = null;
-                          });
-                        },
-                      )
-                    : null,
-                filled: true,
-                fillColor: Colors.white,
-              ),
-              onChanged: (value) {
-                setState(() {
-                  _searchQuery = value;
-                  _selectedStudent = null;
-                });
-              },
-            ),
-          ),
-        ),
-      ),
-      body: ValueListenableBuilder<bool>(
-        valueListenable: database.isLoadingNotifier,
-        builder: (context, isLoading, child) {
-          if (isLoading) {
-            return const Center(child: CircularProgressIndicator());
-          }
-
-          return ValueListenableBuilder<Map<String, BorrowRecord>>(
-            valueListenable: database.borrowRecords,
-            builder: (context, borrowRecords, _) {
-              return ValueListenableBuilder<Map<String, Student>>(
-                valueListenable: database.students,
-                builder: (context, students, _) {
-                  final recordsList = borrowRecords.values.toList();
-                  final studentsList = students.values.toList();
-
-                  if (recordsList.isEmpty) {
-                    return Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.history,
-                            size: 64,
-                            color: Colors.grey[400],
-                          ),
-                          const SizedBox(height: 16),
-                          Text(
-                            'Chưa có lịch sử mượn sách nào',
-                            style: Theme.of(context)
-                                .textTheme
-                                .titleLarge
-                                ?.copyWith(
-                                  color: Colors.grey[600],
-                                ),
-                          ),
-                        ],
-                      ),
-                    );
-                  }
-
-                  // Filter students based on search query
-                  final filteredStudents = _searchQuery.isEmpty
-                      ? studentsList
-                      : studentsList
-                          .where((student) => student.name
-                              .toLowerCase()
-                              .contains(_searchQuery.toLowerCase()))
-                          .toList();
-
-                  // If we have a search query but no matching students
-                  if (_searchQuery.isNotEmpty && filteredStudents.isEmpty) {
-                    return Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.search_off,
-                            size: 64,
-                            color: Colors.grey[400],
-                          ),
-                          const SizedBox(height: 16),
-                          Text(
-                            'Không tìm thấy sinh viên với tên "$_searchQuery"',
-                            style: Theme.of(context)
-                                .textTheme
-                                .titleLarge
-                                ?.copyWith(
-                                  color: Colors.grey[600],
-                                ),
-                            textAlign: TextAlign.center,
-                          ),
-                        ],
-                      ),
-                    );
-                  }
-
-                  // If we have a selected student, show their records
-                  if (_selectedStudent != null) {
-                    final studentRecords = recordsList
-                        .where((record) =>
-                            record.student.id == _selectedStudent!.id)
-                        .toList();
-
-                    return Column(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(16),
-                          color: Colors.blue.withValues(alpha: 0.1),
-                          child: Row(
-                            children: [
-                              CircleAvatar(
-                                backgroundColor: Colors.blue,
-                                child: Text(
-                                  _selectedStudent!.name[0].toUpperCase(),
-                                  style: const TextStyle(color: Colors.white),
-                                ),
-                              ),
-                              const SizedBox(width: 16),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      _selectedStudent!.name,
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 18,
-                                      ),
-                                    ),
-                                    Text(
-                                      'Mã SV: ${_selectedStudent!.studentId} - Lớp: ${_selectedStudent!.className}',
-                                      style: TextStyle(
-                                        color: Colors.grey[600],
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              IconButton(
-                                icon: const Icon(Icons.close),
-                                onPressed: () {
-                                  setState(() {
-                                    _selectedStudent = null;
-                                  });
-                                },
-                              ),
-                            ],
-                          ),
-                        ),
-                        Expanded(
-                          child: studentRecords.isEmpty
-                              ? Center(
-                                  child: Text(
-                                    'Sinh viên chưa mượn sách nào',
-                                    style: TextStyle(
-                                      color: Colors.grey[600],
-                                      fontSize: 16,
-                                    ),
-                                  ),
-                                )
-                              : ListView.builder(
-                                  itemCount: studentRecords.length,
-                                  itemBuilder: (context, index) {
-                                    final record = studentRecords[index];
-                                    return _buildRecordCard(record);
-                                  },
-                                ),
-                        ),
-                      ],
-                    );
-                  }
-
-                  // Show the list of students with borrowing history
-                  return ListView.builder(
-                    itemCount: filteredStudents.length,
-                    itemBuilder: (context, index) {
-                      final student = filteredStudents[index];
-                      final studentRecords = recordsList
-                          .where((record) => record.student.id == student.id)
-                          .toList();
-
-                      if (studentRecords.isEmpty) {
-                        return const SizedBox.shrink();
-                      }
-
-                      return ListTile(
-                        leading: CircleAvatar(
-                          backgroundColor: Colors.blue,
-                          child: Text(
-                            student.name[0].toUpperCase(),
-                            style: const TextStyle(color: Colors.white),
-                          ),
-                        ),
-                        title: Text(student.name),
-                        subtitle: Text(
-                            'Mã SV: ${student.studentId} - ${studentRecords.length} lượt mượn'),
-                        trailing: const Icon(Icons.chevron_right),
-                        onTap: () {
-                          setState(() {
-                            _selectedStudent = student;
-                          });
-                        },
-                      );
-                    },
-                  );
-                },
-              );
-            },
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _buildRecordCard(BorrowRecord record) {
+  Widget _buildRecordItem(BorrowRecord record) {
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: ExpansionTile(
@@ -344,9 +133,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
           style: const TextStyle(fontWeight: FontWeight.bold),
         ),
         subtitle: Text(
-          record.book.author,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
+          'Mượn bởi: ${record.student.name}',
+          style: TextStyle(color: Colors.grey[600]),
         ),
         trailing: _buildStatusChip(record),
         children: [
@@ -355,17 +143,23 @@ class _HistoryScreenState extends State<HistoryScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                _buildInfoRow('Sinh viên:', record.student.name),
+                _buildInfoRow('Mã SV:', record.student.studentId),
+                _buildInfoRow('Lớp:', record.student.className),
+                const Divider(),
+                _buildInfoRow('Sách:', record.book.title),
                 _buildInfoRow('Tác giả:', record.book.author),
-                _buildInfoRow('Nhà xuất bản:', record.book.publisher),
+                _buildInfoRow('NXB:', record.book.publisher),
                 _buildInfoRow('ISBN:', record.book.isbn),
+                const Divider(),
                 _buildInfoRow('Ngày mượn:', _formatDate(record.borrowDate)),
-                if (record.isReturned)
+                if (record.returnDate != null)
                   _buildInfoRow(
                     'Ngày trả:',
                     _formatDate(record.returnDate!),
                     textColor: Colors.green,
-                  )
-                else if (record.isOverdue)
+                  ),
+                if (record.isOverdue)
                   _buildInfoRow(
                     'Quá hạn:',
                     '${record.daysOverdue} ngày',
@@ -375,6 +169,161 @@ class _HistoryScreenState extends State<HistoryScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final database = context.read<LibraryDatabase>();
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Lịch sử mượn sách'),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(80),
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: TextField(
+              controller: _searchController,
+              decoration: InputDecoration(
+                hintText: 'Tìm kiếm theo tên sinh viên hoặc tên sách...',
+                prefixIcon: const Icon(Icons.search),
+                suffixIcon: _searchQuery.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.clear),
+                        onPressed: () {
+                          setState(() {
+                            _searchController.clear();
+                            _searchQuery = '';
+                            _displayedRecords.clear();
+                          });
+                        },
+                      )
+                    : null,
+                filled: true,
+                fillColor: Colors.white,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+              onChanged: (value) {
+                setState(() {
+                  _searchQuery = value;
+                  _displayedRecords.clear();
+                });
+              },
+            ),
+          ),
+        ),
+      ),
+      body: ValueListenableBuilder<bool>(
+        valueListenable: database.isLoadingNotifier,
+        builder: (context, isLoading, child) {
+          if (isLoading && _displayedRecords.isEmpty) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          return ValueListenableBuilder<Map<String, BorrowRecord>>(
+            valueListenable: database.borrowRecords,
+            builder: (context, borrowRecordsMap, child) {
+              final allRecords = borrowRecordsMap.values.toList();
+
+              if (allRecords.isEmpty) {
+                return Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.history,
+                        size: 64,
+                        color: Colors.grey[400],
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Chưa có lịch sử mượn sách nào',
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                              color: Colors.grey[600],
+                            ),
+                      ),
+                    ],
+                  ),
+                );
+              }
+
+              // Filter records based on search query
+              final filteredRecords = _searchQuery.isEmpty
+                  ? allRecords
+                  : allRecords
+                      .where((record) =>
+                          record.student.name
+                              .toLowerCase()
+                              .contains(_searchQuery.toLowerCase()) ||
+                          record.book.title
+                              .toLowerCase()
+                              .contains(_searchQuery.toLowerCase()))
+                      .toList();
+
+              if (filteredRecords.isEmpty) {
+                return Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.search_off,
+                        size: 64,
+                        color: Colors.grey[400],
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Không tìm thấy kết quả cho "$_searchQuery"',
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                              color: Colors.grey[600],
+                            ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
+                  ),
+                );
+              }
+
+              // Update displayed records
+              if (_displayedRecords.isEmpty) {
+                _displayedRecords = filteredRecords.take(_pageSize).toList();
+              } else if (_isLoading) {
+                final currentLength = _displayedRecords.length;
+                final newRecords = filteredRecords
+                    .skip(currentLength)
+                    .take(_pageSize)
+                    .toList();
+                if (newRecords.isNotEmpty) {
+                  _displayedRecords.addAll(newRecords);
+                }
+                _isLoading = false;
+              }
+
+              return ListView.builder(
+                controller: _scrollController,
+                itemCount: _displayedRecords.length + 1,
+                itemBuilder: (context, index) {
+                  if (index == _displayedRecords.length) {
+                    if (_displayedRecords.length < filteredRecords.length) {
+                      return const Center(
+                        child: Padding(
+                          padding: EdgeInsets.all(16.0),
+                          child: CircularProgressIndicator(),
+                        ),
+                      );
+                    }
+                    return const SizedBox.shrink();
+                  }
+                  return _buildRecordItem(_displayedRecords[index]);
+                },
+              );
+            },
+          );
+        },
       ),
     );
   }

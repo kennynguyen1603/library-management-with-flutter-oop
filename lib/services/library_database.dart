@@ -171,17 +171,28 @@ class LibraryDatabase extends ChangeNotifier {
 
   Future<void> _loadBorrowRecords() async {
     try {
+      debugPrint('Loading borrow records...');
       final records = await _postgresDb.getBorrowRecords();
+      debugPrint('Loaded ${records.length} borrow records from database');
 
       // Update ValueNotifier immediately
       final newRecords = <String, BorrowRecord>{};
+      final streamRecords = <BorrowRecord>[];
+
       for (var record in records) {
+        // Add to both collections
         newRecords[record.id] = record;
+        streamRecords.add(record);
       }
+
+      // Update ValueNotifier
       _borrowRecords.value = newRecords;
 
-      // Update stream
-      _borrowRecordsController.add(records);
+      // Update stream with the list
+      _borrowRecordsController.add(streamRecords);
+
+      debugPrint(
+          'Successfully updated borrow records: ${streamRecords.length} records');
     } catch (e, stackTrace) {
       debugPrint('Error loading borrow records: $e');
       debugPrint('Stack trace: $stackTrace');

@@ -310,12 +310,32 @@ class PostgresDatabase {
     return await _withConnection((conn) async {
       debugPrint('Fetching all borrow records from database...');
       final results = await conn.execute('''
-        SELECT br.*, b.*, s.* 
-        FROM borrow_records br 
-        JOIN books b ON br.book_id = b.id 
+        SELECT 
+          br.id,
+          br.book_id,
+          br.student_id,
+          br.borrow_date,
+          br.return_date,
+          br.is_returned,
+          b.title,
+          b.author,
+          b.publisher,
+          b.isbn,
+          b.publish_year,
+          b.status,
+          b.current_borrower_id,
+          s.name,
+          s.student_id as student_number,
+          s.class_name,
+          s.email,
+          s.phone_number
+        FROM borrow_records br
+        JOIN books b ON br.book_id = b.id
         JOIN students s ON br.student_id = s.id
+        ORDER BY br.borrow_date DESC
       ''');
       debugPrint('Successfully fetched ${results.length} borrow records');
+
       return results.map((row) {
         final List<dynamic> values = row.toList();
         return _rowToBorrowRecord(values);
@@ -381,13 +401,41 @@ class PostgresDatabase {
   }
 
   BorrowRecord _rowToBorrowRecord(List<dynamic> row) {
+    // Parse book data
+    final book = Book(
+      id: row[1] as String, // book_id
+      title: row[6] as String, // title
+      author: row[7] as String, // author
+      publisher: row[8] as String? ?? '', // publisher
+      isbn: row[9] as String? ?? '', // isbn
+      publishYear: row[10] as int? ?? DateTime.now().year, // publish_year
+      status: BookStatus.values.firstWhere(
+        (e) =>
+            e.toString() ==
+            (row[11] as String? ?? BookStatus.available.toString()),
+        orElse: () => BookStatus.available,
+      ),
+      currentBorrowerId: row[12] as String?, // current_borrower_id
+    );
+
+    // Parse student data
+    final student = Student(
+      id: row[2] as String, // student_id from borrow_records
+      name: row[13] as String, // name
+      studentId: row[14] as String, // student_number
+      className: row[15] as String? ?? '', // class_name
+      email: row[16] as String? ?? '', // email
+      phoneNumber: row[17] as String? ?? '', // phone_number
+    );
+
+    // Create borrow record
     return BorrowRecord(
-      id: row[0] as String,
-      book: _rowToBook(row.sublist(3, 11)),
-      student: _rowToStudent(row.sublist(11)),
-      borrowDate: row[3] as DateTime,
-      returnDate: row[4] as DateTime?,
-      isReturned: row[5] as bool,
+      id: row[0] as String, // id
+      book: book,
+      student: student,
+      borrowDate: row[3] as DateTime, // borrow_date
+      returnDate: row[4] as DateTime?, // return_date
+      isReturned: row[5] as bool, // is_returned
     );
   }
 
