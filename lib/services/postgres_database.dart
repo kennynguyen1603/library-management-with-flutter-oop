@@ -34,7 +34,7 @@ class PostgresDatabase {
           port: 5432,
           database: 'library_db',
           username: 'postgres',
-          password: '590199nyphuyen',
+          password: '',
         ),
         settings: const ConnectionSettings(
           sslMode: SslMode.disable,
